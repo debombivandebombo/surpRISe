@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.constants import c, pi
+import copy
 
 class RIS:
     def __init__(self,
@@ -180,9 +181,6 @@ class RIS:
         else:
             raise ValueError("mode must be either 'normal' or 'perfect'")
 
-
-
-    
     def get_all_phase_shifts(self):
         """Returns a (Nrow, Ncol) array of phase shifts in radians."""
         return self.elem_phase_shift.copy()
@@ -197,10 +195,12 @@ class RIS:
 
     def plot_phase_dist(self):
         """Plots the 2D distribution of phase shifts using matplotlib."""
+        wrapped_phase = np.mod(self.elem_phase_shift, 2 * np.pi)
+        
         plt.figure(figsize=(6, 5))
         mesh = plt.pcolormesh(np.arange(self.Ncol+1)-0.5,
                               np.arange(self.Nrow+1)-0.5,
-                              self.elem_phase_shift,
+                              wrapped_phase,
                               cmap='viridis', shading='auto',
                               vmin=0, vmax=2*np.pi)
         cbar = plt.colorbar(mesh, label='Phase Shift (radians)')
@@ -220,6 +220,9 @@ class RIS:
         plt.gca().invert_yaxis()
         plt.tight_layout()
         plt.show()
+
+    def copy(self):
+        return copy.deepcopy(self)
 
     def __repr__(self):
         return f"RIS({self.Nrow}x{self.Ncol}, boresight='{self.boresight}', center={self.center.tolist()})"
