@@ -192,6 +192,40 @@ class RIS:
     def get_all_refl_coef(self):
         """Returns a (Nrow, Ncol) array of complex weights: attenuation * exp(1j * phase)."""
         return self.elem_att * np.exp(1j * self.elem_phase_shift)
+    
+    def get_rad_pat(self, position_xyz):
+        """
+        Compute the RIS radiation pattern for all elements toward a given 3D position.
+
+        Parameters:
+        -----------
+        position_xyz : ndarray of shape (3,)
+            Target 3D position to evaluate the radiation pattern toward.
+
+        Returns:
+        --------
+        rad_pat : ndarray of shape (Nrow, Ncol)
+            Radiation pattern from each RIS element toward the given position.
+        """
+        # Vector from each RIS element to the target position
+        direction_vectors = position_xyz - self.positions  # shape: (Nrow, Ncol, 3)
+
+        # Normalize direction vectors
+        norms = np.linalg.norm(direction_vectors, axis=2, keepdims=True)
+        direction_unit = direction_vectors / norms  # shape: (Nrow, Ncol, 3)
+
+        # Compute angle between direction and RIS normal
+        # self.normal is assumed already normalized
+        cos_ang = np.sum(direction_unit * self.normal, axis=2)  # shape: (Nrow, Ncol)
+        cos_ang = np.clip(cos_ang, -1.0, 1.0)  # Ensure valid range
+        ang_rel = np.arccos(cos_ang)
+
+        # Compute radiation pattern
+        rad_pat = np.zeros_like(ang_rel)
+        valid = (ang_rel >= 0) & (ang_rel <= np.pi / 2)
+        rad_pat[valid] = np.cos(ang_rel[valid]) ** self.radiation_factor
+
+        return rad_pat  # shape: (Nrow, Ncol)
 
     def plot_phase_dist(self):
         """Plots the 2D distribution of phase shifts using matplotlib."""
@@ -220,6 +254,28 @@ class RIS:
         plt.gca().invert_yaxis()
         plt.tight_layout()
         plt.show()
+
+    def export_pattern_to_csv(self, filename):
+        """
+        Export elem_state to a CSV-style string with comma-separated rows,
+        like [[-1 -1],[-1 -1]], all in one line.
+        """
+        if not filename.lower().endswith('.csv'):
+            filename += '.csv'
+
+        try:
+            rows = []
+            for row in self.elem_state:
+                row_str = '[' + ' '.join(map(str, row)) + ']'
+                rows.append(row_str)
+            array_str = '[' + ','.join(rows) + ']'
+
+            with open(filename, 'w') as f:
+                f.write(array_str)
+
+            print(f"Element state matrix exported to {filename} in compact format.")
+        except Exception as e:
+            print(f"Error exporting RIS element state: {e}")
 
     def copy(self):
         return copy.deepcopy(self)
