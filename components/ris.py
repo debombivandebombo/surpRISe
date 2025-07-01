@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 from scipy.constants import c, pi
 import copy
 
+import scienceplots
+plt.style.use(['science','no-latex'])
+plt.rcParams.update({'font.size': 15})
+
 class RIS:
     def __init__(self,
                  center=[0, 0, 0],          # (3,) Center of the RIS in 3D (default at origin)

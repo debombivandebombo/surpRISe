@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 from scipy.constants import c, pi
 from optimizers.tx_ris_rx_opt import tx_ris_rx_direct_disc_opt, tx_ris_rx_max_bf_opt
 
+import scienceplots
+plt.style.use(['science','no-latex'])
+plt.rcParams.update({'font.size': 15})
+
 class tx_ris_rx_channel:
     def __init__(self, tx_antenna=None, rx_antenna=None, ris=None,
                  mode='normal', model='Tang_general', optimizer='max_bf'):
