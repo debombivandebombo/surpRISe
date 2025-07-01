@@ -242,7 +242,7 @@ class RIS:
         tick_labels = [r'$0$', r'$\frac{\pi}{2}$', r'$\pi$', r'$\frac{3\pi}{2}$', r'$2\pi$']
         cbar.set_ticks(ticks)
         cbar.set_ticklabels(tick_labels)
-        plt.title('RIS Phase Distribution')
+        plt.title(f"RIS Phase Distribution")
         plt.xlabel('Columns')
         plt.ylabel('Rows')
         plt.xticks(np.arange(self.Ncol))

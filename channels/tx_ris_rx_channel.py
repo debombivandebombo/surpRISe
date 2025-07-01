@@ -293,7 +293,7 @@ class tx_ris_rx_channel:
         perp_idx = list({0, 1, 2} - {ax_idx, normal_idx})[0]
 
         center = self.ris.center.copy()
-        angles = np.linspace(-np.pi / 2, np.pi / 2, Nr)
+        angles = np.linspace(-pi / 2, pi / 2, Nr)
 
         rx_points = np.zeros((Nr, 3))
         rx_points[:, ax_idx] = center[ax_idx] + r * np.sin(angles)
@@ -320,7 +320,7 @@ class tx_ris_rx_channel:
         perp_idx = list({0, 1, 2} - {ax_idx, normal_idx})[0]
 
         center = self.ris.center.copy()
-        angles = np.linspace(-np.pi / 2, np.pi / 2, Nr)
+        angles = np.linspace(-pi / 2, pi / 2, Nr)
 
         rx_points = np.zeros((Nr, 3))
         rx_points[:, ax_idx] = center[ax_idx] + r * np.sin(angles)
@@ -339,7 +339,136 @@ class tx_ris_rx_channel:
         plt.tight_layout()
         plt.show()
 
-            
+    def plot_phase_bf_angle_2d_map(self, r, Nr):
+        ris_center = self.ris.center.copy()
+        boresight = self.ris.boresight.lower()
+
+        if boresight == 'z':
+            theta = np.linspace(0, pi / 2, Nr)  # elevation
+            phi = np.linspace(-pi, pi, Nr)   # azimuth
+        elif boresight == 'x':
+            theta = np.linspace(0, pi, Nr)  # elevation
+            phi = np.linspace(-pi / 2, pi / 2, Nr)   # azimuth
+        else:   # boresight == 'y'
+            theta = np.linspace(0, pi, Nr)  # elevation
+            phi = np.linspace(0, pi, Nr)   # azimuth
+
+        Theta, Phi = np.meshgrid(theta, phi, indexing='ij')
+
+        x = r * np.sin(Theta) * np.cos(Phi)
+        y = r * np.sin(Theta) * np.sin(Phi)
+        z = r * np.cos(Theta)
+
+        rx_points = np.stack([x, y, z], axis=-1) + ris_center
+        rx_points = rx_points.reshape(-1, 3)
+
+        bf = self.phase_bf_multrx(rx_points)
+        max_bf = (self.ris.Nrow * self.ris.Ncol)**2
+
+        plt.figure(figsize=(6, 4))
+        pcm = plt.pcolormesh(np.degrees(Phi), np.degrees(Theta), bf.reshape(Nr, Nr) / max_bf, shading='auto', cmap='viridis', vmin=0, vmax=1)
+        plt.xlabel('Azimuth φ (deg)')
+        plt.ylabel('Elevation θ (deg)')
+        plt.title(f"2D Angular Phase Beamforming Map, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.colorbar(pcm, label='Normalized Beamforming')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_path_gain_angle_2d_map(self, r, Nr, vmin=-160, vmax=-80):
+        ris_center = self.ris.center.copy()
+        boresight = self.ris.boresight.lower()
+
+        if boresight == 'z':
+            theta = np.linspace(0, pi / 2, Nr)  # elevation
+            phi = np.linspace(-pi, pi, Nr)   # azimuth
+        elif boresight == 'x':
+            theta = np.linspace(0, pi, Nr)  # elevation
+            phi = np.linspace(-pi / 2, pi / 2, Nr)   # azimuth
+        else:   # boresight == 'y'
+            theta = np.linspace(0, pi, Nr)  # elevation
+            phi = np.linspace(0, pi, Nr)   # azimuth
+
+        Theta, Phi = np.meshgrid(theta, phi, indexing='ij')
+
+        x = r * np.sin(Theta) * np.cos(Phi)
+        y = r * np.sin(Theta) * np.sin(Phi)
+        z = r * np.cos(Theta)
+
+        rx_points = np.stack([x, y, z], axis=-1) + ris_center
+        rx_points = rx_points.reshape(-1, 3)
+
+        path_gains = self.path_gain_multrx(rx_points)
+        path_gains_db = 10 * np.log10(path_gains.reshape(Nr, Nr))
+
+        plt.figure(figsize=(6, 4))
+        pcm = plt.pcolormesh(np.degrees(Phi), np.degrees(Theta), path_gains_db, shading='auto', cmap='viridis', vmin=vmin, vmax=vmax)
+        plt.xlabel('Azimuth φ (deg)')
+        plt.ylabel('Elevation θ (deg)')
+        plt.title(f"2D Angular Path Gain Map, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.colorbar(pcm, label='Path Gain (dB)')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    # def plot_phase_bf_angle_3d(self, r=10, Nr=180):
+    #     """
+    #     Plot the 3D beamforming response (normalized) as a spherical diagram centered at the origin.
+
+    #     Parameters:
+    #     ------------
+    #     r : float
+    #         Radius at which receiver points are placed.
+    #     Nr : int
+    #         Resolution for azimuth and elevation angles.
+    #     """
+    #     ris_center = self.ris.center.copy()
+    #     boresight = self.ris.boresight.lower()
+
+    #     if boresight == 'z':
+    #         theta = np.linspace(0, pi / 2, Nr)  # elevation
+    #         phi = np.linspace(-pi, pi, Nr)   # azimuth
+    #     elif boresight == 'x':
+    #         theta = np.linspace(0, pi, Nr)  # elevation
+    #         phi = np.linspace(-pi / 2, pi / 2, Nr)   # azimuth
+    #     else:   # boresight == 'y'
+    #         theta = np.linspace(0, pi, Nr)  # elevation
+    #         phi = np.linspace(0, pi, Nr)   # azimuth
+
+    #     Theta, Phi = np.meshgrid(theta, phi, indexing='ij')
+
+    #     x = r * np.sin(Theta) * np.cos(Phi)
+    #     y = r * np.sin(Theta) * np.sin(Phi)
+    #     z = r * np.cos(Theta)
+
+    #     rx_points = r * np.stack([x, y, z], axis=-1) + ris_center  # (Nr, Nr, 3)
+    #     rx_points = rx_points.reshape(-1, 3)
+
+    #     bf = self.phase_bf_multrx(rx_points)
+    #     max_bf = (self.ris.Nrow * self.ris.Ncol)**2
+    #     R = bf.reshape(Nr, Nr) / max_bf # Beamforming normalized between 0 and 1
+
+    #     X = R * x
+    #     Y = R * y
+    #     Z = R * z
+
+    #     fig = plt.figure(figsize=(8, 6))
+    #     ax = fig.add_subplot(111, projection='3d')
+    #     ax.plot_surface(X, Y, Z,
+    #                            rstride=1, cstride=1, antialiased=True, alpha=0.9)
+
+    #     m = plt.cm.ScalarMappable(cmap='viridis')
+    #     m.set_array(R)
+    #     m.set_clim(0, 1)
+    #     fig.colorbar(m, shrink=0.6, aspect=10, label='Normalized BF', ax=ax)
+
+    #     ax.set_title("3D Beamforming Pattern (Normalized)")
+    #     ax.set_xlabel("X")
+    #     ax.set_ylabel("Y")
+    #     ax.set_zlabel("Z")
+    #     ax.set_box_aspect([1, 1, 1])
+    #     plt.tight_layout()
+    #     plt.show()
 
     def __repr__(self):
         return (f"tx_ris_rx_channel(model='{self.model}', mode='{self.mode}', "
