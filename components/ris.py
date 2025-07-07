@@ -56,6 +56,7 @@ class RIS:
         self.positions = self._generate_positions()
         self.reset_ris()
         self.perfect_phase_enabled = False
+        self.mode = 'disc'
 
     def _get_normal_from_boresight(self):
         if self.boresight == 'x':
@@ -140,8 +141,9 @@ class RIS:
         self.elem_att = get_att(self.elem_state)
 
         self.perfect_phase_enabled = False
+        self.mode = 'disc'
 
-    def set_all_shift(self, shift_matrix, mode='normal'):
+    def set_all_shift(self, shift_matrix, mode='disc'):
         """
         Updates RIS element configuration based on a matrix of phase shifts.
 
@@ -150,23 +152,22 @@ class RIS:
         shift_matrix : ndarray or list of float, shape (Nrow, Ncol)
             Desired phase shift (in radians) for each element.
         mode : str
-            'normal' to use predefined discrete states from phase_shifts_dict,
-            'perfect' to apply arbitrary continuous phase shifts directly.
+            'disc' to use predefined discrete states from phase_shifts_dict,
+            'cont' to apply arbitrary continuous phase shifts directly.
         """
         shift_matrix = np.array(shift_matrix, dtype=float)
 
         if shift_matrix.shape != (self.Nrow, self.Ncol):
             raise ValueError(f"shift_matrix must have shape ({self.Nrow}, {self.Ncol})")
 
-        if mode == 'perfect':
+        if mode == 'cont':
             self.elem_phase_shift = shift_matrix
             self.elem_att = np.ones((self.Nrow, self.Ncol), dtype=float)
             self.elem_state = np.full((self.Nrow, self.Ncol), -1, dtype=int)
             self.perfect_phase_enabled = True
+            self.mode = 'cont'
 
-        elif mode == 'normal':
-            # Check if all values are valid shifts from the dict
-            allowed_shifts = list(self.phase_shifts_dict.values())
+        elif mode == 'disc':
 
             # Map from shift value to state index
             shift_to_state = {v: k for k, v in self.phase_shifts_dict.items()}
@@ -181,9 +182,10 @@ class RIS:
 
             self.set_all_state(state_matrix)
             self.perfect_phase_enabled = False
+            self.mode = 'disc'
 
         else:
-            raise ValueError("mode must be either 'normal' or 'perfect'")
+            raise ValueError("mode must be either 'disc' or 'cont'")
 
     def get_all_phase_shifts(self):
         """Returns a (Nrow, Ncol) array of phase shifts in radians."""
@@ -241,7 +243,7 @@ class RIS:
                               wrapped_phase,
                               cmap='viridis', shading='auto',
                               vmin=0, vmax=2*np.pi)
-        cbar = plt.colorbar(mesh, label='Phase Shift (radians)')
+        cbar = plt.colorbar(mesh, label=r'Phase Shift, $\psi$ (rad)')
         ticks = np.arange(0, 2*np.pi + 0.1, np.pi/2)  # +0.1 para incluir 2π por redondeo
         tick_labels = [r'$0$', r'$\frac{\pi}{2}$', r'$\pi$', r'$\frac{3\pi}{2}$', r'$2\pi$']
         cbar.set_ticks(ticks)

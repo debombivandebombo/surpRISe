@@ -33,7 +33,7 @@ def calc_path_exp_shift(tx_pos, rx_pos, ris_positions, fc):
     return total_exp_shift
 
 class tx_ris_rx_direct_disc_opt:
-    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='normal'):
+    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='disc'):
         """
         Parameters:
         -----------
@@ -44,7 +44,7 @@ class tx_ris_rx_direct_disc_opt:
         ris : RIS object
             Reconfigurable Intelligent Surface object (must be provided).
         mode : str
-            Phase configuration mode for RIS ('normal' or 'perfect').
+            Phase configuration mode for RIS ('disc' or 'cont').
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -62,21 +62,21 @@ class tx_ris_rx_direct_disc_opt:
     def optimize(self):
             """
             Compute optimal state (phase shift) shifts for each RIS element.
-            mode: "perfect" => exact inverse phase; "normal" => closest phase from phase_shifts_dict
+            mode: "cont" => exact inverse phase; "disc" => closest phase from phase_shifts_dict
             """
             # Calculate total path exp phase shift
             total_path_exp_shift = calc_path_exp_shift(self.tx_antenna.position,
                                                         self.rx_antenna.position,
                                                         self.ris.positions,
                                                         self.ris.fc)
-            # Calculate perfect phase shift
+            # Calculate cont (perfect) phase shift
             desired_complex = total_path_exp_shift ** -1
             desired_phase = np.angle(desired_complex)
 
-            if self.mode == "perfect":
+            if self.mode == "cont":
                 return desired_phase
 
-            elif self.mode == "normal":
+            elif self.mode == "disc":
                 # Discretize phase to nearest value in phase_shifts_dict
                 discrete_phase = np.zeros_like(desired_phase)
                 # Valid shifts from dictionary
@@ -90,10 +90,10 @@ class tx_ris_rx_direct_disc_opt:
                 return discrete_phase
 
             else:
-                raise ValueError("Invalid mode. Use 'normal' or 'perfect'.")
+                raise ValueError("Invalid mode. Use 'disc' or 'cont'.")
             
 class tx_ris_rx_max_bf_opt:
-    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='normal'):
+    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='disc'):
         """
         Parameters:
         -----------
@@ -104,7 +104,7 @@ class tx_ris_rx_max_bf_opt:
         ris : RIS object
             Reconfigurable Intelligent Surface object (must be provided).
         mode : str
-            Phase configuration mode for RIS ('normal' or 'perfect').
+            Phase configuration mode for RIS ('disc' or 'cont').
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -122,7 +122,7 @@ class tx_ris_rx_max_bf_opt:
     def optimize(self):
             """
             Compute optimal state (phase shift) shifts for each RIS element.
-            mode: "perfect" => exact inverse phase; "normal" => closest phase from phase_shifts_dict
+            mode: "cont" => exact inverse phase; "disc" => closest phase from phase_shifts_dict
             """
             # Calculate total path exp phase shift
             total_path_exp_shift = calc_path_exp_shift(self.tx_antenna.position,
@@ -130,14 +130,14 @@ class tx_ris_rx_max_bf_opt:
                                                         self.ris.positions,
                                                         self.ris.fc)
             
-            # Calculate perfect phase shift
+            # Calculate cont (perfect) phase shift
             desired_complex = total_path_exp_shift ** -1
             desired_phase = np.angle(desired_complex)
 
-            if self.mode == "perfect":
+            if self.mode == "cont":
                 return desired_phase
 
-            elif self.mode == "normal":
+            elif self.mode == "disc":
                 valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
 
                 # Minimization algoritm (does not work correctly):
@@ -168,7 +168,7 @@ class tx_ris_rx_max_bf_opt:
                 # alpha_opt = result.x
 
                 # Grid search
-                alphas = np.linspace(0, 2 * np.pi, 3600)
+                alphas = np.linspace(0, 2 * np.pi, 720)
                 best_bf = -np.inf
                 best_alpha = 0
 
@@ -209,4 +209,4 @@ class tx_ris_rx_max_bf_opt:
                 return discrete_phase
 
             else:
-                raise ValueError("Invalid mode. Use 'normal' or 'perfect'.")
+                raise ValueError("Invalid mode. Use 'disc' or 'cont'.")

@@ -9,7 +9,7 @@ plt.rcParams.update({'font.size': 15})
 
 class tx_ris_rx_channel:
     def __init__(self, tx_antenna=None, rx_antenna=None, ris=None,
-                 mode='normal', model='Tang_general', optimizer='max_bf'):
+                 model='Tang_general'):
         """
         Initializes a RIS-assisted Tx-RIS-Rx channel.
 
@@ -21,12 +21,8 @@ class tx_ris_rx_channel:
             Receiver antenna object (must be provided).
         ris : RIS object
             Reconfigurable Intelligent Surface object (must be provided).
-        mode : str
-            Phase configuration mode for RIS ('normal' or 'perfect').
         model : str
             Channel model name (e.g., 'Tang_general', 'Tang_farfield', etc.).
-        optimizer : str
-            Optimizer name (e.g., 'direct_disc', 'max_bf', etc.).
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -38,38 +34,45 @@ class tx_ris_rx_channel:
         self.tx_antenna = tx_antenna
         self.rx_antenna = rx_antenna
         self.ris = ris
-
-        self.mode = mode.lower()
         self.model = model.lower()
-        self.optimizer = optimizer.lower()
-
-        if self.mode not in ['normal', 'perfect']:
-            raise ValueError("mode must be either 'normal' or 'perfect'")
-        
-        # Placeholder for RIS-assisted channel computation
-        self.h_ris = None           # Complex channel via RIS
-        self.optimal_state = None  # Optimal state index matrix (for normal mode)
-        self.optimal_shift = None  # Optimal shift matrix (for perfect mode)
+        self.last_optimizer = ''
     
-    def optimize(self):
+    def optimize(self, optimizer='max_bf', mode='disc'):
         """
         Optimize the states/shifts of the RIS given the desired optimizer
+
+        Parameters:
+        -----------
+        optimizer : str
+            Optimizer name (e.g., 'direct_disc', 'max_bf', etc.).
+        mode : str
+            Phase configuration mode for RIS ('disc' (discrete) or 'cont' (continuous)).
         """
+        # Check correct mode name
+        if mode not in ['disc', 'cont']:
+            self.last_optimizer = ''    # If error, reset it
+            raise ValueError("mode variable must be either 'disc' or 'cont'")
+        
+        if mode == 'disc':
+            self.last_optimizer = optimizer     # Update last optimizer used
+        else:
+            self.last_optimizer = 'perfect'
+
         # Add extra optimizers as extra elif entries
-        if self.optimizer == 'direct_disc':
+        if optimizer == 'direct_disc':
             # Instantiate optimizer object
-            opt = tx_ris_rx_direct_disc_opt(tx_antenna=self.tx_antenna, rx_antenna=self.rx_antenna, ris=self.ris, mode=self.mode)
-        elif self.optimizer == 'max_bf':
+            opt = tx_ris_rx_direct_disc_opt(tx_antenna=self.tx_antenna, rx_antenna=self.rx_antenna, ris=self.ris, mode=mode)
+        elif optimizer == 'max_bf':
             # Instantiate optimizer object
-            opt = tx_ris_rx_max_bf_opt(tx_antenna=self.tx_antenna, rx_antenna=self.rx_antenna, ris=self.ris, mode=self.mode)
+            opt = tx_ris_rx_max_bf_opt(tx_antenna=self.tx_antenna, rx_antenna=self.rx_antenna, ris=self.ris, mode=mode)
         else:
             raise ValueError("Invalid optimizer.")
-        
+            
         # Optimize the states
         opt_phase_shift = opt.optimize()
 
         # Update the ris states
-        self.ris.set_all_shift(opt_phase_shift, mode=self.mode)
+        self.ris.set_all_shift(opt_phase_shift, mode=mode)
 
         # Return the updated ris object
         # return self.ris # Not necessary because the original object is already updated
@@ -139,9 +142,6 @@ class tx_ris_rx_channel:
         # Retrieve RIS and antenna information
         ris_pos = self.ris.positions  # shape: (Nrow, Ncol, 3)
         tx_pos = self.tx_antenna.position  # shape: (3,)
-
-        # RIS phase shift matrix
-        phase_shift_matrix = self.ris.elem_phase_shift  # shape: (Nrow, Ncol)
 
         # Wavenumber
         k = 2 * pi * self.ris.fc / c
@@ -215,7 +215,7 @@ class tx_ris_rx_channel:
         pcm = plt.pcolormesh(A1, A2, bf.reshape(Nax1, Nax2) / max_bf, shading='auto', cmap='viridis', vmin=0, vmax=1)
         plt.xlabel(f"{plane[0].upper()} (m)")
         plt.ylabel(f"{plane[1].upper()} (m)")
-        plt.title(f"Phase beamforming distribution in {plane.upper()} plane, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.title(f"Phase beamforming distribution in {plane.upper()} plane, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.colorbar(pcm, label='Normalized Beamforming')
         plt.xlim(ax1lim)
         plt.ylim(ax2lim)
@@ -263,7 +263,7 @@ class tx_ris_rx_channel:
         pcm = plt.pcolormesh(A1, A2, 10 * np.log10(pg.reshape(Nax1, Nax2)), shading='auto', cmap='viridis', vmin=vmin, vmax=vmax)
         plt.xlabel(f"{plane[0].upper()} (m)")
         plt.ylabel(f"{plane[1].upper()} (m)")
-        plt.title(f"Path gain distribution in {plane.upper()} plane, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.title(f"Path gain distribution in {plane.upper()} plane, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.colorbar(pcm, label='Path Gain (dB)')
         plt.xlim(ax1lim)
         plt.ylim(ax2lim)
@@ -311,7 +311,7 @@ class tx_ris_rx_channel:
         plt.plot(np.degrees(angles), bf / max_bf, lw=2)
         plt.xlabel(f"Angle (deg) in {axis.upper()}-{['x','y','z'][normal_idx].upper()} plane")
         plt.ylabel("Normalized Beamforming")
-        plt.title(f"Phase beamforming vs Angle, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.title(f"Phase beamforming vs Angle, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.ylim([0, 1])
         plt.grid(True)
         plt.tight_layout()
@@ -337,7 +337,7 @@ class tx_ris_rx_channel:
         plt.plot(np.degrees(angles), 10 * np.log10(pg), lw=2)
         plt.xlabel(f"Angle (deg) in {axis.upper()}-{['x','y','z'][normal_idx].upper()} plane")
         plt.ylabel("Path Gain (dB)")
-        plt.title(f"Path Gain vs Angle, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.title(f"Path Gain vs Angle, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.ylim([vmin, vmax])
         plt.grid(True)
         plt.tight_layout()
@@ -371,9 +371,9 @@ class tx_ris_rx_channel:
 
         plt.figure(figsize=(6, 4))
         pcm = plt.pcolormesh(np.degrees(Phi), np.degrees(Theta), bf.reshape(Nr, Nr) / max_bf, shading='auto', cmap='viridis', vmin=0, vmax=1)
-        plt.xlabel('Azimuth φ (deg)')
-        plt.ylabel('Elevation θ (deg)')
-        plt.title(f"2D Angular Phase Beamforming Map, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.xlabel(r'Azimuth $\varphi$ (deg)')
+        plt.ylabel(r'Elevation $\theta$ (deg)')
+        plt.title(f"2D Angular Phase Beamforming Map, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.colorbar(pcm, label='Normalized Beamforming')
         plt.grid(True)
         plt.tight_layout()
@@ -407,73 +407,14 @@ class tx_ris_rx_channel:
 
         plt.figure(figsize=(6, 4))
         pcm = plt.pcolormesh(np.degrees(Phi), np.degrees(Theta), path_gains_db, shading='auto', cmap='viridis', vmin=vmin, vmax=vmax)
-        plt.xlabel('Azimuth φ (deg)')
-        plt.ylabel('Elevation θ (deg)')
-        plt.title(f"2D Angular Path Gain Map, mode '{self.mode}', opt '{self.optimizer}'")
+        plt.xlabel(r'Azimuth $\varphi$ (deg)')
+        plt.ylabel(r'Elevation $\theta$ (deg)')
+        plt.title(f"2D Angular Path Gain Map, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.colorbar(pcm, label='Path Gain (dB)')
         plt.grid(True)
         plt.tight_layout()
         plt.show()
 
-    # def plot_phase_bf_angle_3d(self, r=10, Nr=180):
-    #     """
-    #     Plot the 3D beamforming response (normalized) as a spherical diagram centered at the origin.
-
-    #     Parameters:
-    #     ------------
-    #     r : float
-    #         Radius at which receiver points are placed.
-    #     Nr : int
-    #         Resolution for azimuth and elevation angles.
-    #     """
-    #     ris_center = self.ris.center.copy()
-    #     boresight = self.ris.boresight.lower()
-
-    #     if boresight == 'z':
-    #         theta = np.linspace(0, pi / 2, Nr)  # elevation
-    #         phi = np.linspace(-pi, pi, Nr)   # azimuth
-    #     elif boresight == 'x':
-    #         theta = np.linspace(0, pi, Nr)  # elevation
-    #         phi = np.linspace(-pi / 2, pi / 2, Nr)   # azimuth
-    #     else:   # boresight == 'y'
-    #         theta = np.linspace(0, pi, Nr)  # elevation
-    #         phi = np.linspace(0, pi, Nr)   # azimuth
-
-    #     Theta, Phi = np.meshgrid(theta, phi, indexing='ij')
-
-    #     x = r * np.sin(Theta) * np.cos(Phi)
-    #     y = r * np.sin(Theta) * np.sin(Phi)
-    #     z = r * np.cos(Theta)
-
-    #     rx_points = r * np.stack([x, y, z], axis=-1) + ris_center  # (Nr, Nr, 3)
-    #     rx_points = rx_points.reshape(-1, 3)
-
-    #     bf = self.phase_bf_multrx(rx_points)
-    #     max_bf = (self.ris.Nrow * self.ris.Ncol)**2
-    #     R = bf.reshape(Nr, Nr) / max_bf # Beamforming normalized between 0 and 1
-
-    #     X = R * x
-    #     Y = R * y
-    #     Z = R * z
-
-    #     fig = plt.figure(figsize=(8, 6))
-    #     ax = fig.add_subplot(111, projection='3d')
-    #     ax.plot_surface(X, Y, Z,
-    #                            rstride=1, cstride=1, antialiased=True, alpha=0.9)
-
-    #     m = plt.cm.ScalarMappable(cmap='viridis')
-    #     m.set_array(R)
-    #     m.set_clim(0, 1)
-    #     fig.colorbar(m, shrink=0.6, aspect=10, label='Normalized BF', ax=ax)
-
-    #     ax.set_title("3D Beamforming Pattern (Normalized)")
-    #     ax.set_xlabel("X")
-    #     ax.set_ylabel("Y")
-    #     ax.set_zlabel("Z")
-    #     ax.set_box_aspect([1, 1, 1])
-    #     plt.tight_layout()
-    #     plt.show()
-
     def __repr__(self):
-        return (f"tx_ris_rx_channel(model='{self.model}', mode='{self.mode}', "
+        return (f"tx_ris_rx_channel(model='{self.model}', "
                 f"RIS size={self.ris.Nrow}x{self.ris.Ncol})")
