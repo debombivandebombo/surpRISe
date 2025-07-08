@@ -19,7 +19,77 @@ class RIS:
                  fc=None,                  # Operating frequency (Hz) (required)
                  radiation_factor=1):      # Cosine pattern exponent (default = 1)
         """
-        Reconfigurable Intelligent Surface (RIS) model with fixed boresight axis.
+        Represents a Reconfigurable Intelligent Surface (RIS) in a 3D environment.
+
+        This class models a rectangular RIS panel composed of discrete reflecting elements
+        arranged in rows and columns. Each element can be configured with a specific phase shift
+        and attenuation, defined per state. The panel orientation is defined by its center point
+        and a fixed boresight axis ('x', 'y', or 'z'). The class also stores geometric and 
+        electromagnetic properties relevant to beamforming and wave reflection modeling.
+
+        Parameters
+        ----------
+        center : list of float, optional (default = [0, 0, 0])
+            3D coordinates of the RIS center in meters.
+
+        boresight : str, optional (default = 'z')
+            Normal direction of the RIS surface. Must be one of 'x', 'y', or 'z'.
+
+        Ncol : int
+            Number of columns (horizontal elements) in the RIS panel.
+
+        Nrow : int
+            Number of rows (vertical elements) in the RIS panel.
+
+        delta_h : float
+            Horizontal spacing between adjacent elements (in meters).
+
+        delta_v : float
+            Vertical spacing between adjacent elements (in meters).
+
+        phase_shifts_dict : dict
+            Dictionary mapping each RIS state (int) to a phase shift value (in radians).
+            For example: `{0: 0.0, 1: pi/2, 2: pi}`.
+
+        att_dict : dict
+            Dictionary mapping each RIS state (int) to an attenuation factor (linear scale).
+            For example: `{0: 1.0, 1: 0.9, 2: 0.7}`.
+
+        dx : float
+            Width of each RIS element (in meters).
+
+        dy : float
+            Height of each RIS element (in meters).
+
+        fc : float
+            Operating frequency of the RIS in Hz.
+
+        radiation_factor : float, optional (default = 1)
+            Exponent of the cosine-based radiation pattern model. A value of 1 corresponds
+            to a classical cosine pattern; higher values narrow the beam.
+
+        Attributes
+        ----------
+        positions : ndarray
+            3D coordinates of each RIS element, shaped (Nrow, Ncol, 3).
+
+        normal : ndarray
+            Unit vector representing the RIS normal (boresight) in 3D.
+
+        N_elements: int
+            Total number of elements of the RIS (Nrow * Ncol).
+
+        mode: str
+            Indicates discrete ('disc') or continuous/perfect ('cont') modes of operating 
+            the shifts of the RIS.
+
+        perfect_phase_enabled : bool
+            Flag indicating discrete (False) or continuous mode (True).
+
+        Notes
+        -----
+        This class assumes a static, planar RIS with discrete, predefined states, but can 
+        also work in continuous (perfect) mode.
         """
         # Basic parameters
         self.center = np.array(center, dtype=float)
@@ -54,10 +124,12 @@ class RIS:
         self.N_elements = self.Ncol * self.Nrow
         self.normal = self._get_normal_from_boresight()
         self.positions = self._generate_positions()
-        self.reset_ris()
         self.perfect_phase_enabled = False
         self.mode = 'disc'
 
+        self.reset_ris()
+     
+    # Functions:
     def _get_normal_from_boresight(self):
         if self.boresight == 'x':
             return np.array([1, 0, 0])
@@ -265,6 +337,16 @@ class RIS:
         """
         Export elem_state to a CSV-style string with comma-separated rows,
         like [[-1 -1],[-1 -1]], all in one line.
+
+        Parameters:
+        -----------
+        filename : str
+            Name of the filename to be saved.
+
+        Returns:
+        --------
+        None
+            Saves the desired filename.
         """
         if not filename.lower().endswith('.csv'):
             filename += '.csv'
