@@ -472,6 +472,7 @@ class tx_ris_rx_channel:
         plt.ylabel("Path Gain (dB)")
         plt.title(f"Path Gain vs Angle, mode '{self.ris.mode}', opt '{self.last_optimizer}'")
         plt.ylim([vmin, vmax])
+        plt.xlim([-90 , 90])
         plt.grid(True)
         plt.tight_layout()
         plt.show()

@@ -17,7 +17,8 @@ class RIS:
                  att_dict=None,            # dict {int: attenuation value per state}
                  dx=None, dy=None,         # Element width and height (required)
                  fc=None,                  # Operating frequency (Hz) (required)
-                 radiation_factor=1):      # Cosine pattern exponent (default = 1)
+                 radiation_factor=1,       # Cosine pattern exponent (default = 1)
+                 name="RIS1"):             # Name of the RIS (optional, default "RIS1")    
         """
         Represents a Reconfigurable Intelligent Surface (RIS) in a 3D environment.
 
@@ -68,6 +69,9 @@ class RIS:
             Exponent of the cosine-based radiation pattern model. A value of 1 corresponds
             to a classical cosine pattern; higher values narrow the beam.
 
+        name : str, optional (default = "RIS1")
+            Name of the RIS instance for identification.
+
         Attributes
         ----------
         positions : ndarray
@@ -102,6 +106,7 @@ class RIS:
         self.dy = dy
         self.fc = fc
         self.radiation_factor = radiation_factor
+        self.name = name
 
         # Validations for required parameters
         for var_name in ['Ncol', 'Nrow', 'delta_h', 'delta_v', 'dx', 'dy', 'fc']:
@@ -166,10 +171,10 @@ class RIS:
         return {int(k): v for k, v in d.items()}
     
     def reset_ris(self):
-        """Initialize elem_state, elem_phase_shift and elem_att with the fist state values."""
+        """Initialize elem_state, elem_phase_shift and elem_att with the first state values."""
         first_state = sorted(self.phase_shifts_dict.keys())[0]
         
-        # elem_state: matrix with the fist state number
+        # elem_state: matrix with the first state number
         self.elem_state = np.full((self.Nrow, self.Ncol), first_state, dtype=int)
         
         # elem_phase_shift: matrix with the phase_shift from the first state
@@ -320,7 +325,7 @@ class RIS:
         tick_labels = [r'$0$', r'$\frac{\pi}{2}$', r'$\pi$', r'$\frac{3\pi}{2}$', r'$2\pi$']
         cbar.set_ticks(ticks)
         cbar.set_ticklabels(tick_labels)
-        plt.title(f"RIS Phase Distribution")
+        plt.title(f"{self.name} Phase Distribution")
         plt.xlabel('Columns')
         plt.ylabel('Rows')
         plt.xticks(np.arange(self.Ncol))
