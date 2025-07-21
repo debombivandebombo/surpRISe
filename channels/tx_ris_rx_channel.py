@@ -173,22 +173,50 @@ class tx_ris_rx_channel:
             rx_pos = rx_positions[i]
 
             # Distance and phase from RIS to current Rx
-            d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)
+            d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)  # (Nrow, Ncol)
             exp_ris_rx = np.exp(-1j * k * d_ris_rx)
 
             # Total complex phase response per element
             exp_total = exp_tx_ris * exp_ris * exp_ris_rx
 
-            # Placeholder for directional gains of
-            # ris_rad_pat_tx and ris_rad_pat_rx
-            # both of shape (Nrow, Ncol)
-            ris_rad_pat_tx = self.ris.get_rad_pat(tx_pos)
-            ris_rad_pat_rx = self.ris.get_rad_pat(rx_pos)
+            # Radiation patterns for RIS from Tx and Rx positions
+            ris_rad_pat_tx = self.ris.get_rad_pat(tx_pos)        # (Nrow, Ncol)
+            ris_rad_pat_rx = self.ris.get_rad_pat(rx_pos)        # (Nrow, Ncol)
 
-            # Element-wise product: combined radiation pattern
-            f_combine = ris_rad_pat_tx * ris_rad_pat_rx     # Radiation pattern of Tx and Rx antennas assumed to be 1 in all the RIS elements for the moment
+            # Flatten RIS positions to shape (Nelem, 3)
+            ris_pos_flat = self.ris.positions.reshape(-1, 3)
 
-            # Path gain for this Rx
+            # TX radiation pattern toward RIS positions
+            tx_rad_pat_flat = self.tx_antenna.get_rad_pat(ris_pos_flat)  # (Nelem,)
+            tx_rad_pat = tx_rad_pat_flat.reshape(ris_pos.shape[:2])      # (Nrow, Ncol)
+
+            # RX radiation pattern: simulate a virtual RX antenna pointing at RIS center
+            pointing_vec_rx = self.ris.center - rx_pos
+            norm_rx = np.linalg.norm(pointing_vec_rx)
+            if norm_rx == 0:
+                raise ValueError("Receiver is at RIS center, undefined pointing direction.")
+            pointing_unit_rx = pointing_vec_rx / norm_rx
+
+            # Directions from RX to each RIS element
+            ris_vectors_rx = ris_pos - rx_pos              # (Nrow, Ncol, 3)
+            norms_rx = np.linalg.norm(ris_vectors_rx, axis=2, keepdims=True)
+            unit_vectors_rx = ris_vectors_rx / norms_rx    # (Nrow, Ncol, 3)
+
+            # Angle between RX pointing vector and RIS element directions
+            cos_ang_rx = np.sum(unit_vectors_rx * pointing_unit_rx, axis=2)
+            cos_ang_rx = np.clip(cos_ang_rx, -1.0, 1.0)
+            ang_rel_rx = np.arccos(cos_ang_rx)             # (Nrow, Ncol)
+
+            # Compute RX radiation pattern based on cosine model
+            rx_rad_pat = np.zeros_like(ang_rel_rx)
+            valid = (ang_rel_rx >= 0) & (ang_rel_rx <= np.pi / 2)
+            gain_linear_rx = 10 ** (self.rx_antenna.gain_dbi / 10)
+            rx_rad_pat[valid] = np.cos(ang_rel_rx[valid]) ** (gain_linear_rx / 2 - 1)
+
+            # Combine all patterns and phase terms
+            f_combine = ris_rad_pat_tx * ris_rad_pat_rx * tx_rad_pat * rx_rad_pat
+
+            # Path gain computation
             path_gains[i] = gain_constant * np.abs(
                 np.sum(exp_total * np.sqrt(f_combine) / (d_tx_ris * d_ris_rx))
             ) ** 2
