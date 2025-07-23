@@ -505,6 +505,151 @@ class tx_ris_rx_channel:
         plt.tight_layout()
         plt.show()
 
+    def plot_phase_bf_dist(self, phi_deg, theta_deg, r1, r2, Nr):
+        """
+        Plots the normalized phase beamforming gain as a function of distance 
+        in a fixed 3D direction from the RIS center.
+
+        This function evaluates the beamforming response of the RIS along a 
+        ray starting at the RIS center and pointing in the direction specified 
+        by spherical angles (phi, theta). The direction is fixed, and distances 
+        are swept from r1 to r2.
+
+        Parameters
+        ----------
+        phi_deg : float
+            Azimuth angle in degrees (measured in the XY plane from +X toward +Y).
+            Can be in the range [-180, 180] or [0, 360].
+
+        theta_deg : float
+            Elevation angle in degrees (measured from the +Z axis downward).
+            Must be in the range [0, 180].
+
+        r1 : float
+            Initial distance from the RIS center to start sampling (must be > 0).
+
+        r2 : float
+            Final distance from the RIS center to end sampling.
+
+        Nr : int
+            Number of distance samples between r1 and r2.
+
+        Returns
+        -------
+        None
+            The function displays the plot but does not return any value.
+        """
+        # Check theta range
+        if not (0 <= theta_deg <= 180):
+            raise ValueError("theta_deg must be between 0 and 180 degrees (measured from +Z axis).")
+
+        # Convert angles from degrees to radians
+        phi = np.deg2rad(phi_deg % 360)     # Normalize phi to [0, 360)
+        theta = np.deg2rad(theta_deg)
+
+        # Direction unit vector in spherical coordinates
+        dir_vector = np.array([
+            np.sin(theta) * np.cos(phi),  # x
+            np.sin(theta) * np.sin(phi),  # y
+            np.cos(theta)                 # z
+        ])
+
+        # Sampling distances
+        r_values = np.linspace(r1, r2, Nr)
+
+        # Generate Rx points along the specified direction
+        center = self.ris.center.copy()
+        rx_points = center[None, :] + r_values[:, None] * dir_vector[None, :]
+
+        # Compute beamforming gain
+        bf = self.phase_bf_multrx(rx_points)
+        max_bf = (self.ris.Nrow * self.ris.Ncol) ** 2
+
+        # Plot results
+        plt.figure(figsize=(6, 4))
+        plt.plot(r_values, bf / max_bf, lw=2)
+        plt.xlabel("Distance from RIS center (m)")
+        plt.ylabel("Normalized Beamforming")
+        plt.title(fr"Phase BF vs Distance at ($\theta=${theta_deg}$^\circ$, $\varphi=${phi_deg}$^\circ$), mode '{self.ris.mode}', opt '{self.last_optimizer}'")
+        plt.ylim([0, 1.01])
+        plt.xlim([r1, r2])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_path_gain_dist(self, phi_deg, theta_deg, r1, r2, Nr, vmin=-160, vmax=-80):
+        """
+        Plots the path gain (in dB) as a function of distance from the RIS in a fixed direction.
+
+        This function evaluates the path gain at positions along a line that starts from the RIS center
+        and extends in the specified angular direction (phi, theta) for distances ranging from `r1` to `r2`.
+        It is useful to characterize how the gain decays with distance in a specific direction.
+
+        Parameters
+        ----------
+        phi_deg : float
+            Azimuth angle in degrees. Measured from X axis in XY plane, counterclockwise.
+
+        theta_deg : float
+            Elevation angle in degrees. Measured from Z axis downward to XY plane.
+
+        r1 : float
+            Starting distance from the RIS center.
+
+        r2 : float
+            Ending distance from the RIS center.
+
+        Nr : int
+            Number of samples between r1 and r2.
+
+        vmin : float, optional (default=-160)
+            Minimum value (in dB) for the y-axis (used to clip the dynamic range of the plot).
+
+        vmax : float, optional (default=-80)
+            Maximum value (in dB) for the y-axis.
+
+        Returns
+        -------
+        None
+            The function displays the plot but does not return any value.
+        """
+        # Check theta range
+        if not (0 <= theta_deg <= 180):
+            raise ValueError("theta_deg must be between 0 and 180 degrees (measured from +Z axis).")
+
+        # Convert angles from degrees to radians
+        phi = np.deg2rad(phi_deg % 360)     # Normalize phi to [0, 360)
+        theta = np.deg2rad(theta_deg)
+
+        # Direction unit vector in spherical coordinates
+        dir_vector = np.array([
+            np.sin(theta) * np.cos(phi),  # x
+            np.sin(theta) * np.sin(phi),  # y
+            np.cos(theta)                 # z
+        ])
+
+        # Sampling distances
+        r_values = np.linspace(r1, r2, Nr)
+
+        # Generate Rx points along the specified direction
+        center = self.ris.center.copy()
+        rx_points = center[None, :] + r_values[:, None] * dir_vector[None, :]
+
+        # Evaluate path gain
+        pg = self.path_gain_multrx(rx_points)  # Expected shape: (Nr,)
+
+        # Plot results
+        plt.figure(figsize=(6, 4))
+        plt.plot(r_values, 10 * np.log10(pg), lw=2)
+        plt.xlabel("Distance from RIS center (m)")
+        plt.ylabel("Path Gain (dB)")
+        plt.title(fr"Path Gain vs Distance at ($\theta=${theta_deg}$^\circ$, $\varphi=${phi_deg}$^\circ$), mode '{self.ris.mode}', opt '{self.last_optimizer}'")
+        plt.ylim([vmin, vmax])
+        plt.xlim([r1, r2])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
     def plot_phase_bf_angle_2d_map(self, r, Nr):
         """
         Plots a 2D angular map of normalized phase beamforming in spherical coordinates.

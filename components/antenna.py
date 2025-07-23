@@ -47,7 +47,7 @@ class Antenna:
 
         rad_pat = np.zeros_like(ang_rel)
         valid = (ang_rel >= 0) & (ang_rel <= np.pi / 2)
-        rad_pat[valid] = np.cos(ang_rel[valid]) ** (self.gain_linear / 2 - 1)
+        rad_pat[valid] = np.minimum(1, np.cos(ang_rel[valid]) ** (self.gain_linear / 2 - 1)) # Limited to 1
 
         return rad_pat
 
