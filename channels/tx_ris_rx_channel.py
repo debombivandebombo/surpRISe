@@ -41,6 +41,10 @@ class tx_ris_rx_channel:
         self.ris = ris
         self.model = model.lower()
         self.last_optimizer = ''
+
+        # Validate model
+        if self.model not in ['tang_general', 'tang_farfield']:
+            raise ValueError("Invalid model. Supported models: 'Tang_general', 'Tang_farfield'.")
     
     def optimize(self, optimizer='max_bf', mode='disc'):
         """
@@ -96,29 +100,52 @@ class tx_ris_rx_channel:
         rx_positions = np.atleast_2d(rx_positions)
         Nrx = rx_positions.shape[0]
 
-        ris_pos = self.ris.positions  # shape: (Nrow, Ncol, 3)
-        tx_pos = self.tx_antenna.position
+        ris_pos = self.ris.positions.copy()  # shape: (Nrow, Ncol, 3)
+        ris_center = self.ris.center.copy()  # shape: (3,)
+        tx_pos = self.tx_antenna.position.copy()
 
-        phase_shift_matrix = self.ris.elem_phase_shift  # shape: (Nrow, Ncol)
         k = 2 * pi * self.ris.fc / c
+
+        # RIS phase shift exponential contribution
+        phase_shift_matrix = self.ris.elem_phase_shift  # shape: (Nrow, Ncol)
+        exp_ris = np.exp(1j * phase_shift_matrix)
 
         phase_sums = np.zeros(Nrx, dtype=complex)
 
-        # Compute distance from TX to each RIS element
-        d_tx_ris = np.linalg.norm(ris_pos - tx_pos, axis=2)
-        exp_tx_ris = np.exp(-1j * k * d_tx_ris)
+        if self.model == 'tang_general':    
+            # Compute distance from TX to each RIS element
+            d_tx_ris = np.linalg.norm(ris_pos - tx_pos, axis=2)
+            exp_tx_ris = np.exp(-1j * k * d_tx_ris)
 
-        # RIS phase shift exponential contribution
-        exp_ris = np.exp(1j * phase_shift_matrix)
+            for i in range(Nrx):
+                rx_pos = rx_positions[i]
+                d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)
+                exp_ris_rx = np.exp(-1j * k * d_ris_rx)
 
-        for i in range(Nrx):
-            rx_pos = rx_positions[i]
-            d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)
-            exp_ris_rx = np.exp(-1j * k * d_ris_rx)
+        elif self.model == 'tang_farfield':
+            # Compute TX to RIS phase
+            ris_rel_pos = ris_pos - ris_center
+            tx_pos = tx_pos.reshape(3,)
+            vec_tx_ris = (ris_center - tx_pos) / np.linalg.norm(ris_center - tx_pos) # Unitary vector of TX-RIS direction
+            dot_product_tx = np.tensordot(ris_rel_pos, vec_tx_ris, axes=([2], [0])) # (Nh, Nv)
 
-            # Element-wise product and sum
-            exp_total = exp_tx_ris * exp_ris * exp_ris_rx
-            phase_sums[i] = np.sum(exp_total)
+            d_tx_ris_center = np.linalg.norm(ris_center - tx_pos)
+            exp_tx_ris_center = np.exp(-1j * k * d_tx_ris_center) # (Nh, Nv)
+            exp_tx_ris = np.exp(-1j * k * dot_product_tx) * exp_tx_ris_center # (Nh, Nv)
+
+            for i in range(Nrx):
+                rx_pos = rx_positions[i]
+                rx_pos = rx_pos.reshape(3,)
+                vec_ris_rx = (rx_pos - ris_center) / np.linalg.norm(rx_pos - ris_center) # Unitary vector of RIS-RX direction
+                dot_product_rx = np.tensordot(ris_rel_pos, vec_ris_rx, axes=([2], [0])) # (Nh, Nv)
+
+                d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
+                exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
+                exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
+
+        # Element-wise product and sum
+        exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+        phase_sums[i] = np.sum(exp_total)
 
         return np.abs(phase_sums)**2
     
@@ -142,8 +169,9 @@ class tx_ris_rx_channel:
         Nrx = rx_positions.shape[0]
 
         # Retrieve RIS and antenna information
-        ris_pos = self.ris.positions  # shape: (Nrow, Ncol, 3)
-        tx_pos = self.tx_antenna.position  # shape: (3,)
+        ris_pos = self.ris.positions.copy()  # shape: (Nrow, Ncol, 3)
+        ris_center = self.ris.center.copy()  # shape: (3,)
+        tx_pos = self.tx_antenna.position.copy()  # shape: (1, 3)
 
         # Wavenumber
         k = 2 * pi * self.ris.fc / c
@@ -159,67 +187,128 @@ class tx_ris_rx_channel:
         # Path gain constant
         gain_constant = g_tx * g_rx * (dx * dy) ** 2 / (16 * pi ** 2)
 
-        # Distance and phase from Tx to RIS
-        d_tx_ris = np.linalg.norm(ris_pos - tx_pos, axis=2)
-        exp_tx_ris = np.exp(-1j * k * d_tx_ris)
-
         # RIS reflection coefficient (Nrow x Ncol complex matrix)
         exp_ris = self.ris.get_all_refl_coef()
 
         # Placeholder for path gains per receiver
         path_gains = np.zeros(Nrx)
 
-        for i in range(Nrx):
-            rx_pos = rx_positions[i]
+        if self.model == 'tang_general':
+            # Distance and phase from Tx to RIS
+            d_tx_ris = np.linalg.norm(ris_pos - tx_pos, axis=2)
+            exp_tx_ris = np.exp(-1j * k * d_tx_ris)
 
-            # Distance and phase from RIS to current Rx
-            d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)  # (Nrow, Ncol)
-            exp_ris_rx = np.exp(-1j * k * d_ris_rx)
+            for i in range(Nrx):
+                rx_pos = rx_positions[i]
 
-            # Total complex phase response per element
-            exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+                # Distance and phase from RIS to current Rx
+                d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)  # (Nrow, Ncol)
+                exp_ris_rx = np.exp(-1j * k * d_ris_rx)
 
-            # Radiation patterns for RIS from Tx and Rx positions
-            ris_rad_pat_tx = self.ris.get_rad_pat(tx_pos)        # (Nrow, Ncol)
-            ris_rad_pat_rx = self.ris.get_rad_pat(rx_pos)        # (Nrow, Ncol)
+                # Total complex phase response per element
+                exp_total = exp_tx_ris * exp_ris * exp_ris_rx
 
-            # Flatten RIS positions to shape (Nelem, 3)
-            ris_pos_flat = self.ris.positions.reshape(-1, 3)
+                # Radiation patterns for RIS from Tx and Rx positions
+                ris_rad_pat_tx = self.ris.get_rad_pat(tx_pos)        # (Nrow, Ncol)
+                ris_rad_pat_rx = self.ris.get_rad_pat(rx_pos)        # (Nrow, Ncol)
 
-            # TX radiation pattern toward RIS positions
-            tx_rad_pat_flat = self.tx_antenna.get_rad_pat(ris_pos_flat)  # (Nelem,)
-            tx_rad_pat = tx_rad_pat_flat.reshape(ris_pos.shape[:2])      # (Nrow, Ncol)
+                # Flatten RIS positions to shape (Nelem, 3)
+                ris_pos_flat = self.ris.positions.reshape(-1, 3)
 
-            # RX radiation pattern: simulate a virtual RX antenna pointing at RIS center
-            pointing_vec_rx = self.ris.center - rx_pos
-            norm_rx = np.linalg.norm(pointing_vec_rx)
-            if norm_rx == 0:
-                raise ValueError("Receiver is at RIS center, undefined pointing direction.")
-            pointing_unit_rx = pointing_vec_rx / norm_rx
+                # TX radiation pattern toward RIS positions
+                tx_rad_pat_flat = self.tx_antenna.get_rad_pat(ris_pos_flat)  # (Nelem,)
+                tx_rad_pat = tx_rad_pat_flat.reshape(ris_pos.shape[:2])      # (Nrow, Ncol)
 
-            # Directions from RX to each RIS element
-            ris_vectors_rx = ris_pos - rx_pos              # (Nrow, Ncol, 3)
-            norms_rx = np.linalg.norm(ris_vectors_rx, axis=2, keepdims=True)
-            unit_vectors_rx = ris_vectors_rx / norms_rx    # (Nrow, Ncol, 3)
+                # RX radiation pattern: simulate a virtual RX antenna pointing at RIS center
+                pointing_vec_rx = self.ris.center - rx_pos
+                norm_rx = np.linalg.norm(pointing_vec_rx)
+                if norm_rx == 0:
+                    raise ValueError("Receiver is at RIS center, undefined pointing direction.")
+                pointing_unit_rx = pointing_vec_rx / norm_rx
 
-            # Angle between RX pointing vector and RIS element directions
-            cos_ang_rx = np.sum(unit_vectors_rx * pointing_unit_rx, axis=2)
-            cos_ang_rx = np.clip(cos_ang_rx, -1.0, 1.0)
-            ang_rel_rx = np.arccos(cos_ang_rx)             # (Nrow, Ncol)
+                # Directions from RX to each RIS element
+                ris_vectors_rx = ris_pos - rx_pos              # (Nrow, Ncol, 3)
+                norms_rx = np.linalg.norm(ris_vectors_rx, axis=2, keepdims=True)
+                unit_vectors_rx = ris_vectors_rx / norms_rx    # (Nrow, Ncol, 3)
 
-            # Compute RX radiation pattern based on cosine model
-            rx_rad_pat = np.zeros_like(ang_rel_rx)
-            valid = (ang_rel_rx >= 0) & (ang_rel_rx <= np.pi / 2)
-            gain_linear_rx = 10 ** (self.rx_antenna.gain_dbi / 10)
-            rx_rad_pat[valid] = np.cos(ang_rel_rx[valid]) ** (gain_linear_rx / 2 - 1)
+                # Angle between RX pointing vector and RIS element directions
+                cos_ang_rx = np.sum(unit_vectors_rx * pointing_unit_rx, axis=2)
+                cos_ang_rx = np.clip(cos_ang_rx, -1.0, 1.0)
+                ang_rel_rx = np.arccos(cos_ang_rx)             # (Nrow, Ncol)
 
-            # Combine all patterns and phase terms
-            f_combine = ris_rad_pat_tx * ris_rad_pat_rx * tx_rad_pat * rx_rad_pat
+                # Compute RX radiation pattern based on cosine model
+                rx_rad_pat = np.zeros_like(ang_rel_rx)
+                valid = (ang_rel_rx >= 0) & (ang_rel_rx <= np.pi / 2)
+                gain_linear_rx = 10 ** (self.rx_antenna.gain_dbi / 10)
+                rx_rad_pat[valid] = np.cos(ang_rel_rx[valid]) ** (gain_linear_rx / 2 - 1)
 
-            # Path gain computation
-            path_gains[i] = gain_constant * np.abs(
-                np.sum(exp_total * np.sqrt(f_combine) / (d_tx_ris * d_ris_rx))
-            ) ** 2
+                # Combine all patterns and phase terms
+                f_combine = ris_rad_pat_tx * ris_rad_pat_rx * tx_rad_pat * rx_rad_pat
+
+                # Path gain computation
+                path_gains[i] = gain_constant * np.abs(
+                    np.sum(exp_total * np.sqrt(f_combine) / (d_tx_ris * d_ris_rx))
+                ) ** 2
+
+        elif self.model == 'tang_farfield':
+            # TX - RIS center distance
+            tx_pos = tx_pos.reshape(3,)
+            d_tx_ris_center = np.linalg.norm(ris_center - tx_pos)
+
+            # Obtain RIS rad pat for TX respect to RIS center
+            dir_vec_tx = (tx_pos - ris_center) / np.linalg.norm(tx_pos - ris_center)  # shape: (3, )
+            cos_ang = np.sum(dir_vec_tx * self.ris.normal)
+            cos_ang = np.clip(cos_ang, -1.0, 1.0)  # Ensure valid range
+            ang_rel = np.arccos(cos_ang)
+
+            # Compute radiation pattern
+            rad_pat_tx = 0
+            if (ang_rel >= 0) & (ang_rel <= np.pi / 2): # valid angle
+                rad_pat_tx = np.cos(ang_rel) ** self.ris.radiation_factor
+            
+            gain_constant = gain_constant * rad_pat_tx / (d_tx_ris_center ** 2) # TX common factors added
+
+            # Compute TX to RIS phase
+            ris_rel_pos = ris_pos - ris_center
+            tx_pos = tx_pos.reshape(3,)
+            vec_tx_ris = (ris_center - tx_pos) / np.linalg.norm(ris_center - tx_pos) # Unitary vector of TX-RIS direction
+            dot_product_tx = np.tensordot(ris_rel_pos, vec_tx_ris, axes=([2], [0])) # (Nh, Nv)
+
+            d_tx_ris_center = np.linalg.norm(ris_center - tx_pos)
+            exp_tx_ris_center = np.exp(-1j * k * d_tx_ris_center) # (Nh, Nv)
+            exp_tx_ris = np.exp(-1j * k * dot_product_tx) * exp_tx_ris_center # (Nh, Nv)
+
+            for i in range(Nrx):
+                rx_pos = rx_positions[i]
+                rx_pos = rx_pos.reshape(3,)
+
+                # RIS center - RX distance
+                d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
+
+                # Obtain RIS rad pat for TX respect to RIS center
+                dir_vec_rx = (rx_pos - ris_center) / np.linalg.norm(rx_pos - ris_center)  # shape: (3, )
+                cos_ang = np.sum(dir_vec_rx * self.ris.normal)
+                cos_ang = np.clip(cos_ang, -1.0, 1.0)  # Ensure valid range
+                ang_rel = np.arccos(cos_ang)
+
+                # Compute radiation pattern
+                rad_pat_rx = 0
+                if (ang_rel >= 0) & (ang_rel <= np.pi / 2): # valid angle
+                    rad_pat_rx = np.cos(ang_rel) ** self.ris.radiation_factor
+                
+                gain_constant_rx = gain_constant * rad_pat_rx / (d_ris_center_rx ** 2) # RX common factors added
+
+                # Compute RIS - RX phase
+                vec_ris_rx = (rx_pos - ris_center) / np.linalg.norm(rx_pos - ris_center) # Unitary vector of RIS-RX direction
+                dot_product_rx = np.tensordot(ris_rel_pos, vec_ris_rx, axes=([2], [0])) # (Nh, Nv)
+
+                exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
+                exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
+
+                exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+                # Path gain computation
+                path_gains[i] = gain_constant_rx * np.abs(np.sum(exp_total)) ** 2
 
         return path_gains
     
