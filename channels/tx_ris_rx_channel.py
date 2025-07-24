@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.constants import c, pi
 
+from utils.utils import *
+
 import plotly.io as pio
 pio.renderers.default = 'notebook_connected' # 'browser' for avoid error but shown in the browser
 import plotly.graph_objects as go
@@ -109,7 +111,7 @@ class tx_ris_rx_channel:
         # RIS phase shift exponential contribution
         phase_shift_matrix = self.ris.elem_phase_shift  # shape: (Nrow, Ncol)
         exp_ris = np.exp(1j * phase_shift_matrix)
-
+        
         phase_sums = np.zeros(Nrx, dtype=complex)
 
         if self.model == 'tang_general':    
@@ -142,9 +144,18 @@ class tx_ris_rx_channel:
                 d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
                 exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
                 exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
+                
+        # Avoid float rounding of magnitude greater than 1
+        exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
+        exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
+        exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
 
         # Element-wise product and sum
         exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+        # Avoid float rounding of magnitude greater than 1
+        exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
+
         phase_sums[i] = np.sum(exp_total)
 
         return np.abs(phase_sums)**2
@@ -190,6 +201,9 @@ class tx_ris_rx_channel:
         # RIS reflection coefficient (Nrow x Ncol complex matrix)
         exp_ris = self.ris.get_all_refl_coef()
 
+        # Avoid float rounding of magnitude greater than 1
+        exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
+
         # Placeholder for path gains per receiver
         path_gains = np.zeros(Nrx)
 
@@ -198,6 +212,9 @@ class tx_ris_rx_channel:
             d_tx_ris = np.linalg.norm(ris_pos - tx_pos, axis=2)
             exp_tx_ris = np.exp(-1j * k * d_tx_ris)
 
+            # Avoid float rounding of magnitude greater than 1
+            exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
+
             for i in range(Nrx):
                 rx_pos = rx_positions[i]
 
@@ -205,8 +222,14 @@ class tx_ris_rx_channel:
                 d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)  # (Nrow, Ncol)
                 exp_ris_rx = np.exp(-1j * k * d_ris_rx)
 
+                # Avoid float rounding of magnitude greater than 1
+                exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
+
                 # Total complex phase response per element
                 exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+                # Avoid float rounding of magnitude greater than 1
+                exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
 
                 # Radiation patterns for RIS from Tx and Rx positions
                 ris_rad_pat_tx = self.ris.get_rad_pat(tx_pos)        # (Nrow, Ncol)
@@ -278,6 +301,9 @@ class tx_ris_rx_channel:
             exp_tx_ris_center = np.exp(-1j * k * d_tx_ris_center) # (Nh, Nv)
             exp_tx_ris = np.exp(-1j * k * dot_product_tx) * exp_tx_ris_center # (Nh, Nv)
 
+            # Avoid float rounding of magnitude greater than 1
+            exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
+
             for i in range(Nrx):
                 rx_pos = rx_positions[i]
                 rx_pos = rx_pos.reshape(3,)
@@ -305,7 +331,13 @@ class tx_ris_rx_channel:
                 exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
                 exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
 
+                # Avoid float rounding of magnitude greater than 1
+                exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
+
                 exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+                # Avoid float rounding of magnitude greater than 1
+                exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
 
                 # Path gain computation
                 path_gains[i] = gain_constant_rx * np.abs(np.sum(exp_total)) ** 2

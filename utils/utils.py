@@ -83,3 +83,21 @@ def dist_3d(A, B):
 
     return np.linalg.norm(A - B, axis=1)
 
+def filt_round_decimals(array, value, atol=1e-12, rtol=0):
+    """    Filters and rounds the elements of an array that are close to a specified value.
+
+    Parameters:
+        array: ndarray, input array to be filtered and rounded
+        value: float, the value to which elements are compared
+        atol: float, absolute tolerance for comparison
+        rtol: float, relative tolerance for comparison
+        
+    Returns:
+        array: the input array with elements close to the specified value rounded to their sign
+    """
+
+    mask = (np.abs(array) > value) & np.isclose(np.abs(array), value, atol=atol, rtol=0)
+    array[mask] /= np.abs(array)[mask]
+
+    return array
+
