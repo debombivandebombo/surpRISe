@@ -99,6 +99,20 @@ class tx_ris_rx_channel:
         phase_bf : ndarray, shape (N,)
             Beamforming power at each receiver location.
         """
+        def compute_bf_for_rx(exp_ris, exp_tx_ris, exp_ris_rx):
+            # Avoid float rounding of magnitude greater than 1
+            exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
+            exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
+            exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
+
+            # Element-wise product and sum
+            exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+            # Avoid float rounding of magnitude greater than 1
+            exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
+
+            return np.sum(exp_total)
+
         rx_positions = np.atleast_2d(rx_positions)
         Nrx = rx_positions.shape[0]
 
@@ -124,6 +138,8 @@ class tx_ris_rx_channel:
                 d_ris_rx = np.linalg.norm(ris_pos - rx_pos, axis=2)
                 exp_ris_rx = np.exp(-1j * k * d_ris_rx)
 
+                phase_sums[i] = compute_bf_for_rx(exp_ris, exp_tx_ris, exp_ris_rx)
+
         elif self.model == 'tang_farfield':
             # Compute TX to RIS phase
             ris_rel_pos = ris_pos - ris_center
@@ -144,20 +160,12 @@ class tx_ris_rx_channel:
                 d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
                 exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
                 exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
-                
-        # Avoid float rounding of magnitude greater than 1
-        exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
-        exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
-        exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
 
-        # Element-wise product and sum
-        exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+                phase_sums[i] = compute_bf_for_rx(exp_ris, exp_tx_ris, exp_ris_rx)
 
-        # Avoid float rounding of magnitude greater than 1
-        exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
-
-        phase_sums[i] = np.sum(exp_total)
-
+        else:
+            raise ValueError("Invalid model. Supported models: 'Tang_general', 'Tang_farfield'.")
+        
         return np.abs(phase_sums)**2
     
     def path_gain_multrx(self, rx_positions):

@@ -96,7 +96,7 @@ def filt_round_decimals(array, value, atol=1e-12, rtol=0):
         array: the input array with elements close to the specified value rounded to their sign
     """
 
-    mask = (np.abs(array) > value) & np.isclose(np.abs(array), value, atol=atol, rtol=0)
+    mask = (np.abs(array) > value) & np.isclose(np.abs(array), value, atol=atol, rtol=rtol)
     array[mask] /= np.abs(array)[mask]
 
     return array
