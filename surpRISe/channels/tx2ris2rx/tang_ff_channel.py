@@ -23,7 +23,7 @@ class tang_ff_channel:
         self.model_name = 'Tang General'
         self.last_optimizer = ''
 
-    def optimize(self, optimizer='max_bf', mode='disc', tx_antenna=None, rx_antenna=None, ris=None):
+    def optimize(self, optimizer='max_bf', mode='disc', wave_model='spherical', tx_antenna=None, rx_antenna=None, ris=None):
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
 
@@ -35,6 +35,10 @@ class tang_ff_channel:
             Phase configuration mode for the RIS: 
             - 'disc' : discrete phase shifts.
             - 'cont' : continuous phase shifts.
+        wave_model : str
+            Wave propagation model to use:
+            - 'spherical' : spherical wavefront model.
+            - 'plane' : plane wavefront model.
         tx_antenna : Antenna, optional
             Transmitting antenna object (must be of class Antenna).
         rx_antenna : Antenna, optional
@@ -62,13 +66,17 @@ class tang_ff_channel:
         else:
             self.last_optimizer = 'perfect'
 
+        # Check correct wave_model name
+        if wave_model not in ['spherical', 'plane']:
+            raise ValueError("wave_model must be either 'spherical' or 'plane'")
+
         # Add extra optimizers as extra elif entries
         if optimizer == 'direct_disc':
             # Instantiate optimizer object
-            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         elif optimizer == 'max_bf':
             # Instantiate optimizer object
-            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         else:
             raise ValueError("Invalid optimizer.")
             
@@ -122,34 +130,60 @@ class tang_ff_channel:
         ris_rel_pos = ris_pos - ris_center
         tx_pos = tx_pos.reshape(3,)
         vec_tx_ris = (ris_center - tx_pos) / np.linalg.norm(ris_center - tx_pos) # Unitary vector of TX-RIS direction
-        dot_product_tx = np.tensordot(ris_rel_pos, vec_tx_ris, axes=([2], [0])) # (Nh, Nv)
-
-        d_tx_ris_center = np.linalg.norm(ris_center - tx_pos)
-        exp_tx_ris_center = np.exp(-1j * k * d_tx_ris_center) # (Nh, Nv)
-        exp_tx_ris = np.exp(-1j * k * dot_product_tx) * exp_tx_ris_center # (Nh, Nv)
 
         for i in range(Nrx):
             rx_pos = rx_positions[i]
             rx_pos = rx_pos.reshape(3,)
             vec_ris_rx = (rx_pos - ris_center) / np.linalg.norm(rx_pos - ris_center) # Unitary vector of RIS-RX direction
-            dot_product_rx = np.tensordot(ris_rel_pos, vec_ris_rx, axes=([2], [0])) # (Nh, Nv)
+            
+            k_eff = vec_tx_ris - vec_ris_rx
 
-            d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
-            exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
-            exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
+            path_phase_shifts = k * np.tensordot(ris_rel_pos, k_eff, axes=([2], [0]))
+            exp_total_path = np.exp(-1j * path_phase_shifts)
 
             # Avoid float rounding of magnitude greater than 1
+            exp_total_path = filt_round_decimals(exp_total_path, 1, atol=1e-12, rtol=0)
             exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
-            exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
-            exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
 
-            # Element-wise product and sum
-            exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+            exp_total = exp_total_path * exp_ris
 
             # Avoid float rounding of magnitude greater than 1
             exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
 
             phase_sums[i] = np.sum(exp_total)
+
+        # # Compute TX to RIS phase
+        # ris_rel_pos = ris_pos - ris_center
+        # tx_pos = tx_pos.reshape(3,)
+        # vec_tx_ris = (ris_center - tx_pos) / np.linalg.norm(ris_center - tx_pos) # Unitary vector of TX-RIS direction
+        # dot_product_tx = np.tensordot(ris_rel_pos, vec_tx_ris, axes=([2], [0])) # (Nh, Nv)
+
+        # d_tx_ris_center = np.linalg.norm(ris_center - tx_pos)
+        # exp_tx_ris_center = np.exp(-1j * k * d_tx_ris_center) # (Nh, Nv)
+        # exp_tx_ris = np.exp(-1j * k * dot_product_tx) * exp_tx_ris_center # (Nh, Nv)
+
+        # for i in range(Nrx):
+        #     rx_pos = rx_positions[i]
+        #     rx_pos = rx_pos.reshape(3,)
+        #     vec_ris_rx = (rx_pos - ris_center) / np.linalg.norm(rx_pos - ris_center) # Unitary vector of RIS-RX direction
+        #     dot_product_rx = np.tensordot(ris_rel_pos, vec_ris_rx, axes=([2], [0])) # (Nh, Nv)
+
+        #     d_ris_center_rx = np.linalg.norm(rx_pos - ris_center)
+        #     exp_ris_center_rx = np.exp(-1j * k * d_ris_center_rx) # (Nh, Nv)
+        #     exp_ris_rx = np.exp(1j * k * dot_product_rx) * exp_ris_center_rx # (Nh, Nv)
+
+        #     # Avoid float rounding of magnitude greater than 1
+        #     exp_ris = filt_round_decimals(exp_ris, 1, atol=1e-12, rtol=0)
+        #     exp_tx_ris = filt_round_decimals(exp_tx_ris, 1, atol=1e-12, rtol=0)
+        #     exp_ris_rx = filt_round_decimals(exp_ris_rx, 1, atol=1e-12, rtol=0)
+
+        #     # Element-wise product and sum
+        #     exp_total = exp_tx_ris * exp_ris * exp_ris_rx
+
+        #     # Avoid float rounding of magnitude greater than 1
+        #     exp_total = filt_round_decimals(exp_total, 1, atol=1e-12, rtol=0)
+
+        #     phase_sums[i] = np.sum(exp_total)
 
 
         return np.abs(phase_sums)**2

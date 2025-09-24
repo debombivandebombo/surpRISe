@@ -23,7 +23,7 @@ class tang_general_channel:
         self.model_name = 'Tang General'
         self.last_optimizer = ''
 
-    def optimize(self, optimizer='max_bf', mode='disc', tx_antenna=None, rx_antenna=None, ris=None):
+    def optimize(self, optimizer='max_bf', mode='disc', wave_model='spherical', tx_antenna=None, rx_antenna=None, ris=None):
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
 
@@ -35,6 +35,10 @@ class tang_general_channel:
             Phase configuration mode for the RIS: 
             - 'disc' : discrete phase shifts.
             - 'cont' : continuous phase shifts.
+        wave_model : str
+            Wave propagation model to use:
+            - 'spherical' : spherical wavefront model.
+            - 'plane' : plane wavefront model.
         tx_antenna : Antenna, optional
             Transmitting antenna object (must be of class Antenna).
         rx_antenna : Antenna, optional
@@ -62,13 +66,17 @@ class tang_general_channel:
         else:
             self.last_optimizer = 'perfect'
 
+        # Check correct wave_model name
+        if wave_model not in ['spherical', 'plane']:
+            raise ValueError("wave_model must be either 'spherical' or 'plane'")
+
         # Add extra optimizers as extra elif entries
         if optimizer == 'direct_disc':
             # Instantiate optimizer object
-            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         elif optimizer == 'max_bf':
             # Instantiate optimizer object
-            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         else:
             raise ValueError("Invalid optimizer.")
             
