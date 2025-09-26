@@ -23,7 +23,7 @@ class tang_general_channel:
         self.model_name = 'Tang General'
         self.last_optimizer = ''
 
-    def optimize(self, optimizer='max_bf', mode='disc', tx_antenna=None, rx_antenna=None, ris=None):
+    def optimize(self, optimizer='max_bf', mode='disc', wave_model='spherical', tx_antenna=None, rx_antenna=None, ris=None):
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
 
@@ -35,6 +35,10 @@ class tang_general_channel:
             Phase configuration mode for the RIS: 
             - 'disc' : discrete phase shifts.
             - 'cont' : continuous phase shifts.
+        wave_model : str
+            Wave propagation model to use:
+            - 'spherical' : spherical wavefront model.
+            - 'plane' : plane wavefront model.
         tx_antenna : Antenna, optional
             Transmitting antenna object (must be of class Antenna).
         rx_antenna : Antenna, optional
@@ -62,13 +66,17 @@ class tang_general_channel:
         else:
             self.last_optimizer = 'perfect'
 
+        # Check correct wave_model name
+        if wave_model not in ['spherical', 'plane']:
+            raise ValueError("wave_model must be either 'spherical' or 'plane'")
+
         # Add extra optimizers as extra elif entries
         if optimizer == 'direct_disc':
             # Instantiate optimizer object
-            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         elif optimizer == 'max_bf':
             # Instantiate optimizer object
-            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode)
+            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
         else:
             raise ValueError("Invalid optimizer.")
             
@@ -425,6 +433,119 @@ class tang_general_channel:
         plt.text(ris_start[i1] + 0.5, ris_start[i2] + 0.5, 'RIS', color='red', fontsize=12, ha='left', va='top')
         plt.tight_layout()
         plt.show()
+
+    def plot_phase_bf_angle(self, ris, tx_antenna, r, Nr, axis='x'):
+        """
+        Plots the normalized phase beamforming gain as a function of angle in a 2D plane.
+
+        This function evaluates the beamforming response of the RIS over a circular arc
+        centered around the RIS, varying the angle in the specified plane (e.g., XZ, YZ, or XY).
+        The plot shows how the beamforming performance varies with respect to the angular direction 
+        at a fixed radius `r` from the RIS center.
+
+        Parameters
+        ----------
+        r : float
+            Radius of the arc (distance from the RIS center to the sampling points).
+        
+        Nr : int
+            Number of angular samples between -90° and 90° (i.e., from -π/2 to π/2 radians).
+        
+        axis : str, optional (default='x')
+            Axis that defines the angular plane in combination with the RIS normal.
+            For example, if axis='x' and the RIS normal is along 'z', the plot is generated
+            in the XZ plane. Must be one of 'x', 'y', or 'z'.
+
+        Returns
+        -------
+        None
+            The function displays the plot but does not return any value.
+        """
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+        ax_idx = axis_map[axis]
+        normal_idx = np.argmax(np.abs(ris.normal))
+        perp_idx = list({0, 1, 2} - {ax_idx, normal_idx})[0]
+
+        center = ris.center.copy()
+        angles = np.linspace(-pi / 2, pi / 2, Nr)
+
+        rx_points = np.zeros((Nr, 3))
+        rx_points[:, ax_idx] = center[ax_idx] + r * np.sin(angles)
+        rx_points[:, normal_idx] = center[normal_idx] + r * np.cos(angles)
+        rx_points[:, perp_idx] = center[perp_idx]  # keep this axis constant
+
+        bf = self.phase_bf_multrx(tx_antenna=tx_antenna, rx_positions=rx_points, ris=ris)
+        max_bf = (ris.Nrow * ris.Ncol)**2
+
+        plt.figure(figsize=(6, 4))
+        plt.plot(np.degrees(angles), bf / max_bf, lw=2)
+        plt.xlabel(f"Angle (deg) in {axis.upper()}{['x','y','z'][normal_idx].upper()} plane")
+        plt.ylabel("Normalized Beamforming")
+        plt.title(f"Phase beamforming vs Angle, mode '{ris.mode}', opt '{self.last_optimizer}'")
+        plt.ylim([0, 1])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_path_gain_angle(self, tx_antenna, rx_antenna, ris, r, Nr, axis='x', vmin=-160, vmax=-80):
+        """
+        Plots the path gain (in dB) as a function of angle in a 2D plane around the RIS.
+
+        This function evaluates the received path gain over a circular arc of radius `r`
+        centered at the RIS, varying the observation angle from −90° to 90° in a specified
+        angular plane. The computed path gain includes the full channel response (e.g., with or without RIS effect)
+        at each sampling point. This visualization helps characterize the directional performance
+        of the RIS or antenna system.
+
+        Parameters
+        ----------
+        r : float
+            Radius of the arc (distance from the RIS center to the sampling points).
+
+        Nr : int
+            Number of angular samples between −90° and 90° (in total).
+
+        axis : str, optional (default='x')
+            Axis defining the angular scanning plane in combination with the RIS normal vector.
+            For example, if `axis='x'` and the RIS normal is along `z`, the scan is performed
+            in the XZ plane. Must be one of 'x', 'y', or 'z'.
+
+        vmin : float, optional (default=-160)
+            Minimum value (in dB) for the y-axis (used to clip the dynamic range of the plot).
+
+        vmax : float, optional (default=-80)
+            Maximum value (in dB) for the y-axis.
+
+        Returns
+        -------
+        None
+            The function displays the plot but does not return any value.
+        """
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+        ax_idx = axis_map[axis]
+        normal_idx = np.argmax(np.abs(ris.normal))
+        perp_idx = list({0, 1, 2} - {ax_idx, normal_idx})[0]
+
+        center = ris.center.copy()
+        angles = np.linspace(-pi / 2, pi / 2, Nr)
+
+        rx_points = np.zeros((Nr, 3))
+        rx_points[:, ax_idx] = center[ax_idx] + r * np.sin(angles)
+        rx_points[:, normal_idx] = center[normal_idx] + r * np.cos(angles)
+        rx_points[:, perp_idx] = center[perp_idx]  # keep this axis constant
+
+        pg = self.path_gain_multrx(tx_antenna=tx_antenna, rx_antenna=rx_antenna, rx_positions=rx_points, ris=ris)
+
+        plt.figure(figsize=(6, 4))
+        plt.plot(np.degrees(angles), 10 * np.log10(pg), lw=2)
+        plt.xlabel(f"Angle (deg) in {axis.upper()}{['x','y','z'][normal_idx].upper()} plane")
+        plt.ylabel("Path Gain (dB)")
+        plt.title(f"Path Gain vs Angle, mode '{ris.mode}', opt '{self.last_optimizer}'")
+        plt.ylim([vmin, vmax])
+        plt.xlim([-90 , 90])
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
     
     def plot_phase_bf_dist(self, tx_antenna, ris, phi_deg, theta_deg, r1, r2, Nr):
         """
@@ -742,6 +863,279 @@ class tang_general_channel:
         plt.colorbar(pcm, label='Path Gain (dB)')
         plt.grid(True)
         plt.tight_layout()
+        plt.show()
+
+    def plot_phase_bf_angle_2d_polar(self, tx_antenna, ris, r, Nr):
+        """
+        Plots a 2D polar map of the normalized phase beamforming gain 
+        over a spherical surface centered at the RIS.
+
+        This function evaluates the beamforming response on a sphere of radius `r`
+        centered at the RIS. The gain is sampled as a function of azimuth (φ, angle) 
+        and elevation (θ, radius), where the angular ranges depend on the RIS boresight 
+        direction ('x', 'y', or 'z'). The result is shown as a polar heatmap with φ as 
+        the polar angle and θ as the radial coordinate.
+
+        Parameters
+        ----------
+        tx_antenna : object
+            Transmitter antenna object providing the source position and parameters.
+
+        ris : object
+            RIS object defining the geometry, center position, boresight orientation, 
+            and operating mode.
+
+        r : float
+            Radius of the observation sphere (distance from the RIS center to the 
+            sampling points).
+
+        Nr : int
+            Number of samples along both azimuth and elevation (controls the angular 
+            resolution of the map).
+
+        Returns
+        -------
+        None
+            Displays a polar 2D color heatmap of normalized beamforming gain. 
+            The function produces a visualization but does not return any value.
+        """
+        ris_center = ris.center.copy()
+        boresight = ris.boresight.lower()
+
+        if boresight == 'z':
+            theta = np.linspace(0, np.pi / 2, Nr)   # elevation
+            phi = np.linspace(-np.pi, np.pi, Nr)    # azimuth
+        elif boresight == 'x':
+            theta = np.linspace(0, np.pi, Nr)
+            phi = np.linspace(-np.pi / 2, np.pi / 2, Nr)
+        else:  # boresight == 'y'
+            theta = np.linspace(0, np.pi, Nr)
+            phi = np.linspace(0, np.pi, Nr)
+
+        Theta, Phi = np.meshgrid(theta, phi, indexing='ij')
+
+        # Cartesian coords of the receivers
+        x = r * np.sin(Theta) * np.cos(Phi)
+        y = r * np.sin(Theta) * np.sin(Phi)
+        z = r * np.cos(Theta)
+
+        rx_points = np.stack([x, y, z], axis=-1) + ris_center
+        rx_points = rx_points.reshape(-1, 3)
+
+        # Compute normalized beamforming
+        bf = self.phase_bf_multrx(tx_antenna=tx_antenna, rx_positions=rx_points, ris=ris)
+        max_bf = (ris.Nrow * ris.Ncol) ** 2
+        bf_norm = bf.reshape(Nr, Nr) / max_bf
+
+        # Plot polar heatmap
+        fig = plt.figure(figsize=(6, 6))
+        ax = fig.add_subplot(111, polar=True)
+        pcm = ax.pcolormesh(Phi, Theta, bf_norm, cmap='viridis', shading='auto', vmin=0, vmax=1)
+
+        ax.set_title(f"Polar Phase Beamforming Map, mode '{ris.mode}', opt '{self.last_optimizer}'", va='bottom')
+        cbar = plt.colorbar(pcm, ax=ax, pad=0.1)
+        cbar.set_label("Normalized Beamforming")
+
+        plt.show()
+
+    def plot_phase_bf_angle_2d_polar(self, tx_antenna, ris, r, Nr):
+        """
+        Plots a 2D polar map of the normalized phase beamforming gain 
+        over a spherical surface centered at the RIS.
+
+        This function computes the beamforming gain at points on a 
+        spherical grid around the RIS, given a transmit antenna and 
+        the RIS configuration, and visualizes it in a polar plot.
+
+        Parameters
+        ----------
+        tx_antenna : object
+            The transmit antenna object used to compute the beamforming.
+        ris : object
+            The RIS object containing parameters like center, boresight,
+            number of rows and columns, and mode.
+        r : float
+            Radius of the spherical surface where the beamforming is evaluated.
+        Nr : int
+            Number of angular points in both theta (elevation) and phi (azimuth) directions.
+
+        Returns
+        -------
+        None
+            Displays a polar plot with normalized beamforming gain.
+        """
+        ris_center = ris.center.copy()
+        boresight = ris.boresight.lower()
+
+        # Define angle ranges depending on boresight
+        if boresight == 'z':
+            theta = np.linspace(0, np.pi/2, Nr)   # elevation (0 -> perpendicular to RIS, pi/2 -> horizon)
+            phi = np.linspace(-np.pi, np.pi, Nr)  # azimuth
+        elif boresight == 'x':
+            theta = np.linspace(0, np.pi/2, Nr)
+            phi = np.linspace(-np.pi/2, np.pi/2, Nr)
+        else:  # boresight == 'y'
+            theta = np.linspace(0, np.pi/2, Nr)
+            phi = np.linspace(0, np.pi, Nr)
+
+        # Angular mesh
+        Phi, Theta = np.meshgrid(phi, theta, indexing="ij")
+
+        # Cartesian coordinates of receiver points
+        x = r * np.sin(Theta) * np.cos(Phi)
+        y = r * np.sin(Theta) * np.sin(Phi)
+        z = r * np.cos(Theta)
+
+        rx_points = np.stack([x, y, z], axis=-1) + ris_center
+        rx_points = rx_points.reshape(-1, 3)
+
+        # Compute normalized beamforming
+        bf = self.phase_bf_multrx(tx_antenna=tx_antenna, rx_positions=rx_points, ris=ris)
+        max_bf = (ris.Nrow * ris.Ncol) ** 2
+        bf_norm = bf.reshape(len(phi), len(theta)) / max_bf
+
+        # Polar plot (phi = angle, theta = radius)
+        fig = plt.figure(figsize=(7, 8))
+        ax = fig.add_subplot(111, polar=True)
+
+        pcm = ax.pcolormesh(Phi, Theta, bf_norm, cmap='viridis', shading='auto', vmin=0, vmax=1)
+
+        # Phi labels (azimuth)
+        phi_ticks = np.arange(-np.pi, np.pi, np.pi/6)
+        phi_labels = [r'$\varphi=-\pi$', r'$\varphi=-5\pi/6$', r'$\varphi=-2\pi/3$', r'$\varphi=-\pi/2$',
+                    r'$\varphi=-\pi/3$', r'$\varphi=-\pi/6$', r'$\varphi=0$', r'$\varphi=\pi/6$',
+                    r'$\varphi=\pi/3$', r'$\varphi=\pi/2$', r'$\varphi=2\pi/3$', r'$\varphi=5\pi/6$']
+        ax.set_xticks(phi_ticks)
+        ax.set_xticklabels(phi_labels)
+        ax.tick_params(axis='x', pad=30)  # increase distance of phi labels from plot
+
+        # Theta labels (radius)
+        theta_ticks = np.arange(0, np.pi/2+1e-6, np.pi/6)
+        theta_labels = [r'$\theta=0$', r'$\theta=\pi/6$', r'$\theta=\pi/3$', r'$\theta=\pi/2$']
+        ax.set_yticks(theta_ticks)
+        ax.set_yticklabels(theta_labels)
+
+        # Set radial labels color to white
+        for label in ax.get_yticklabels():
+            label.set_color("white")
+
+        # Adjust limits to not cut the map
+        ax.set_thetamin(-180)  # degrees -> -π
+        ax.set_thetamax(180)   # degrees -> π
+        ax.set_rmax(np.pi/2)   # maximum radius = 90° elevation
+
+        # Title and colorbar
+        ax.set_title(f"Polar Phase Beamforming, mode '{ris.mode}', opt '{self.last_optimizer}'", va='bottom', y=1.20)
+        cbar = plt.colorbar(pcm, ax=ax, pad=0.2)
+        cbar.set_label("Normalized Beamforming")
+
+        plt.show()
+
+    def plot_path_gain_angle_2d_polar(self, tx_antenna, rx_antenna, ris, r, Nr, vmin=-160, vmax=-60):
+        """
+        Plots a 2D polar map of the path gain over a spherical
+        surface centered at the RIS.
+
+        This function computes the path gain at points on a 
+        spherical grid around the RIS, given a transmit antenna and 
+        the RIS configuration, and visualizes it in a polar plot.
+
+        Parameters
+        ----------
+        tx_antenna : object
+            Transmitter antenna object, providing the position and gain pattern of the TX.
+
+        rx_antenna : object
+            Receiver antenna object, defining the position, orientation, and gain 
+            pattern of the RX.
+
+        ris : object
+            RIS object containing the geometry, element configuration, center position, 
+            boresight orientation, and operating mode.
+
+        r : float
+            Radius of the observation sphere (distance from the RIS center to the 
+            sampling points).
+
+        Nr : int
+            Number of samples along both azimuth and elevation directions 
+            (sets the angular resolution of the map).
+
+        vmin : float, optional (default=-160)
+            Minimum path gain value (in dB) used to clip the color scale of the plot.
+
+        vmax : float, optional (default=-80)
+            Maximum path gain value (in dB) used for the color scale.
+
+        Returns
+        -------
+        None
+            Displays a polar plot with normalized beamforming gain.
+        """
+        ris_center = ris.center.copy()
+        boresight = ris.boresight.lower()
+
+        # Define angle ranges depending on boresight
+        if boresight == 'z':
+            theta = np.linspace(0, np.pi/2, Nr)   # elevation (0 -> perpendicular to RIS, pi/2 -> horizon)
+            phi = np.linspace(-np.pi, np.pi, Nr)  # azimuth
+        elif boresight == 'x':
+            theta = np.linspace(0, np.pi/2, Nr)
+            phi = np.linspace(-np.pi/2, np.pi/2, Nr)
+        else:  # boresight == 'y'
+            theta = np.linspace(0, np.pi/2, Nr)
+            phi = np.linspace(0, np.pi, Nr)
+
+        # Angular mesh
+        Phi, Theta = np.meshgrid(phi, theta, indexing="ij")
+
+        # Cartesian coordinates of receiver points
+        x = r * np.sin(Theta) * np.cos(Phi)
+        y = r * np.sin(Theta) * np.sin(Phi)
+        z = r * np.cos(Theta)
+
+        rx_points = np.stack([x, y, z], axis=-1) + ris_center
+        rx_points = rx_points.reshape(-1, 3)
+
+        # Compute normalized beamforming
+        path_gains = self.path_gain_multrx(tx_antenna=tx_antenna, rx_antenna=rx_antenna, rx_positions=rx_points, ris=ris)
+        path_gains_db = 10 * np.log10(path_gains.reshape(Nr, Nr))
+
+        # Polar plot (phi = angle, theta = radius)
+        fig = plt.figure(figsize=(7, 8))
+        ax = fig.add_subplot(111, polar=True)
+
+        pcm = ax.pcolormesh(Phi, Theta, path_gains_db, cmap='viridis', shading='auto', vmin=vmin, vmax=vmax)
+
+        # Phi labels (azimuth)
+        phi_ticks = np.arange(-np.pi, np.pi, np.pi/6)
+        phi_labels = [r'$\varphi=-\pi$', r'$\varphi=-5\pi/6$', r'$\varphi=-2\pi/3$', r'$\varphi=-\pi/2$',
+                    r'$\varphi=-\pi/3$', r'$\varphi=-\pi/6$', r'$\varphi=0$', r'$\varphi=\pi/6$',
+                    r'$\varphi=\pi/3$', r'$\varphi=\pi/2$', r'$\varphi=2\pi/3$', r'$\varphi=5\pi/6$']
+        ax.set_xticks(phi_ticks)
+        ax.set_xticklabels(phi_labels)
+        ax.tick_params(axis='x', pad=30)  # increase distance of phi labels from plot
+
+        # Theta labels (radius)
+        theta_ticks = np.arange(0, np.pi/2+1e-6, np.pi/6)
+        theta_labels = [r'$\theta=0$', r'$\theta=\pi/6$', r'$\theta=\pi/3$', r'$\theta=\pi/2$']
+        ax.set_yticks(theta_ticks)
+        ax.set_yticklabels(theta_labels)
+
+        # Set radial labels color to white
+        for label in ax.get_yticklabels():
+            label.set_color("white")
+
+        # Adjust limits to not cut the map
+        ax.set_thetamin(-180)  # degrees -> -π
+        ax.set_thetamax(180)   # degrees -> π
+        ax.set_rmax(np.pi/2)   # maximum radius = 90° elevation
+
+        # Title and colorbar
+        ax.set_title(f"Polar Path Gain, mode '{ris.mode}', opt '{self.last_optimizer}'", va='bottom', y=1.20)
+        cbar = plt.colorbar(pcm, ax=ax, pad=0.2)
+        cbar.set_label("Path Gain (dB)")
+
         plt.show()
 
     def plot_phase_bf_angle_3d(self, tx_antenna, ris, r, Nr):
