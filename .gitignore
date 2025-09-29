@@ -1,0 +1,13 @@
+# Compiled files
+__pycache__/
+*.py[cod]
+
+# Packaging
+*.egg-info/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Entornos virtuales (si los creas dentro del repo)
+.venv/
+env/
