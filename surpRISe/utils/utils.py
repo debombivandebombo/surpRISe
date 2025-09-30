@@ -1,6 +1,6 @@
 import numpy as np
 
-def sph2cart(spherical_coords):
+def sph2cart(spherical_coords: np.ndarray) -> np.ndarray:
     """
     Converts spherical coordinates to Cartesian coordinates.
     
@@ -30,7 +30,7 @@ def sph2cart(spherical_coords):
 
     return np.column_stack((x, y, z))
 
-def cart2sph(cartesian_coords):
+def cart2sph(cartesian_coords: np.ndarray) -> np.ndarray:
     """
     Converts Cartesian coordinates to spherical coordinates.
 
@@ -64,7 +64,7 @@ def cart2sph(cartesian_coords):
 
 import numpy as np
 
-def dist_3d(A, B):
+def dist_3d(A: np.ndarray, B: np.ndarray) -> np.ndarray:
     """
     Computes the Euclidean distance between corresponding pairs of 3D Cartesian points.
     
@@ -83,8 +83,9 @@ def dist_3d(A, B):
 
     return np.linalg.norm(A - B, axis=1)
 
-def filt_round_decimals(array, value, atol=1e-12, rtol=0):
-    """    Filters and rounds the elements of an array that are close to a specified value.
+def filt_round_decimals(array: np.ndarray, value: float, atol: float = 1e-12, rtol: float = 0) -> np.ndarray:
+    """    
+    Filters and rounds the elements of an array that are close to a specified value.
 
     Parameters:
         array: ndarray, input array to be filtered and rounded

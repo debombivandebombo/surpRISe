@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.constants import c, pi
 from scipy.optimize import minimize_scalar
 
-def calc_spherical_path_exp_shift(tx_pos, rx_pos, ris_positions, fc):
+def calc_spherical_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris_positions: np.ndarray, fc: float) -> np.ndarray:
     """
     Compute the total exp phase shift from Tx to RIS to Rx
     under the spherical wavefront assumption.
@@ -37,7 +37,7 @@ def calc_spherical_path_exp_shift(tx_pos, rx_pos, ris_positions, fc):
 
     return total_exp_shift
 
-def calc_plane_path_exp_shift(tx_pos, rx_pos, ris, fc):
+def calc_plane_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris: 'RIS', fc: float) -> np.ndarray:
     """
     Compute the total exp phase shift from Tx to RIS to Rx
     under the plane wavefront assumption.
@@ -93,7 +93,7 @@ def calc_plane_path_exp_shift(tx_pos, rx_pos, ris, fc):
     return total_exp_shift
 
 class tx_ris_rx_direct_disc_opt:
-    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='disc', wave_model='spherical'):
+    def __init__(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None, mode: str = 'disc', wave_model: str = 'spherical') -> None:
         """
         Parameters:
         -----------
@@ -120,7 +120,7 @@ class tx_ris_rx_direct_disc_opt:
         self.mode = mode.lower()
         self.wave_model = wave_model.lower()
 
-    def optimize(self):
+    def optimize(self) -> np.ndarray:
         """
         Compute optimal state (phase shift) for each RIS element.
 
@@ -175,7 +175,7 @@ class tx_ris_rx_direct_disc_opt:
             raise ValueError("Invalid mode. Use 'disc' or 'cont'.")
             
 class tx_ris_rx_max_bf_opt:
-    def __init__(self, tx_antenna=None, rx_antenna=None, ris=None, mode='disc'):
+    def __init__(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None, mode: str = 'disc') -> None:
         """
         Parameters:
         -----------
@@ -201,7 +201,7 @@ class tx_ris_rx_max_bf_opt:
 
         self.mode = mode.lower()
 
-    def optimize(self):
+    def optimize(self) -> np.ndarray:
         """
         Compute optimal state (phase shift) for each RIS element.
 
