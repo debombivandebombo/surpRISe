@@ -9,16 +9,16 @@ plt.rcParams.update({'font.size': 15})
 
 class RIS:
     def __init__(self,
-                 center=[0, 0, 0],          # (3,) Center of the RIS in 3D (default at origin)
-                 boresight='z',            # 'x', 'y', or 'z' (default 'z')
-                 Ncol=None, Nrow=None,     # Number of columns and rows (required)
-                 delta_h=None, delta_v=None,  # Spacing between elements (required)
-                 phase_shifts_dict=None,   # dict {int: phase_shift in radians per state}
-                 att_dict=None,            # dict {int: attenuation value per state}
-                 dx=None, dy=None,         # Element width and height (required)
-                 fc=None,                  # Operating frequency (Hz) (required)
-                 radiation_factor=1,       # Cosine pattern exponent (default = 1)
-                 name="RIS1"):             # Name of the RIS (optional, default "RIS1")    
+                 center: list = [0, 0, 0],                      # (3,) Center of the RIS in 3D (default at origin)
+                 boresight: str = 'z',                          # 'x', 'y', or 'z' (default 'z')
+                 fc: float = None,                              # Operating frequency (Hz) (required)
+                 Ncol: int = None, Nrow: int = None,            # Number of columns and rows (required)
+                 delta_h: float = None, delta_v: float = None,  # Spacing between elements (required)
+                 dx: float = None, dy: float = None,            # Element width and height (required)
+                 phase_shifts_dict: dict = None,                # dict {int: phase_shift in radians per state}
+                 att_dict: dict = None,                         # dict {int: attenuation value per state}
+                 radiation_factor: float = 1,                   # Cosine pattern exponent (default = 1)
+                 name: str = "RIS1") -> None:                   # Name of the RIS (optional, default "RIS1")    
         """
         Represents a Reconfigurable Intelligent Surface (RIS) in a 3D environment.
 
@@ -96,17 +96,17 @@ class RIS:
         also work in continuous (perfect) mode.
         """
         # Basic parameters
-        self.center = np.array(center, dtype=float)
-        self.boresight = boresight.lower()
-        self.Ncol = Ncol
-        self.Nrow = Nrow
-        self.delta_h = delta_h
-        self.delta_v = delta_v
-        self.dx = dx
-        self.dy = dy
-        self.fc = fc
-        self.radiation_factor = radiation_factor
-        self.name = name
+        self.center: np.ndarray = np.array(center, dtype=float)
+        self.boresight: str = boresight.lower()
+        self.Ncol: int = Ncol
+        self.Nrow: int = Nrow
+        self.delta_h: float = delta_h
+        self.delta_v: float = delta_v
+        self.dx: float = dx
+        self.dy: float = dy
+        self.fc: float = fc
+        self.radiation_factor: float = radiation_factor
+        self.name: str = name
 
         # Validations for required parameters
         for var_name in ['Ncol', 'Nrow', 'delta_h', 'delta_v', 'dx', 'dy', 'fc']:
@@ -125,17 +125,17 @@ class RIS:
         
         if self.boresight not in ('x', 'y', 'z'):
             raise ValueError("Boresight must be one of 'x', 'y', or 'z'")
-        
-        self.N_elements = self.Ncol * self.Nrow
-        self.normal = self._get_normal_from_boresight()
-        self.positions = self._generate_positions()
-        self.perfect_phase_enabled = False
-        self.mode = 'disc'
+
+        self.N_elements: int = self.Ncol * self.Nrow
+        self.normal: np.ndarray = self._get_normal_from_boresight()
+        self.positions: np.ndarray = self._generate_positions()
+        self.perfect_phase_enabled: bool = False
+        self.mode: str = 'disc'
 
         self.reset_ris()
-     
+    
     # Functions:
-    def _get_normal_from_boresight(self):
+    def _get_normal_from_boresight(self) -> np.ndarray:
         if self.boresight == 'x':
             return np.array([1, 0, 0])
         elif self.boresight == 'y':
@@ -143,7 +143,7 @@ class RIS:
         elif self.boresight == 'z':
             return np.array([0, 0, 1])
 
-    def _generate_positions(self):
+    def _generate_positions(self) -> np.ndarray:
         positions = np.zeros((self.Nrow, self.Ncol, 3), dtype=float)
 
         row_indices = np.arange(self.Nrow)
@@ -166,11 +166,11 @@ class RIS:
                 positions[i, j, :] = pos
 
         return positions
-    
-    def _parse_dict_keys_to_int(self, d):
+
+    def _parse_dict_keys_to_int(self, d: dict) -> dict:
         return {int(k): v for k, v in d.items()}
     
-    def reset_ris(self):
+    def reset_ris(self) -> None:
         """Initialize elem_state, elem_phase_shift and elem_att with the first state values."""
         first_state = sorted(self.phase_shifts_dict.keys())[0]
         
@@ -185,7 +185,7 @@ class RIS:
         att_value = self.att_dict[first_state]
         self.elem_att = np.full((self.Nrow, self.Ncol), att_value, dtype=float)
 
-    def set_all_state(self, state_matrix):
+    def set_all_state(self, state_matrix: np.ndarray) -> None:
         """
         Updates elem_state, elem_phase_shift, and elem_att according to the given state matrix.
 
@@ -220,7 +220,7 @@ class RIS:
         self.perfect_phase_enabled = False
         self.mode = 'disc'
 
-    def set_all_shift(self, shift_matrix, mode='disc'):
+    def set_all_shift(self, shift_matrix: np.ndarray, mode: str = 'disc') -> None:
         """
         Updates RIS element configuration based on a matrix of phase shifts.
 
@@ -264,19 +264,19 @@ class RIS:
         else:
             raise ValueError("mode must be either 'disc' or 'cont'")
 
-    def get_all_phase_shifts(self):
+    def get_all_phase_shifts(self) -> np.ndarray:
         """Returns a (Nrow, Ncol) array of phase shifts in radians."""
         return self.elem_phase_shift.copy()
 
-    def get_all_state_indices(self):
+    def get_all_state_indices(self) -> np.ndarray:
         """Returns a (Nrow, Ncol) array of state indices."""
         return self.elem_state.copy()
 
-    def get_all_refl_coef(self):
+    def get_all_refl_coef(self) -> np.ndarray:
         """Returns a (Nrow, Ncol) array of complex weights: attenuation * exp(1j * phase)."""
         return self.elem_att * np.exp(1j * self.elem_phase_shift)
-    
-    def get_rad_pat(self, position_xyz):
+
+    def get_rad_pat(self, position_xyz: np.ndarray) -> np.ndarray:
         """
         Compute the RIS radiation pattern for all elements toward a given 3D position.
 
@@ -310,7 +310,7 @@ class RIS:
 
         return rad_pat  # shape: (Nrow, Ncol)
 
-    def plot_phase_dist(self):
+    def plot_phase_dist(self) -> None:
         """Plots the 2D distribution of phase shifts using matplotlib."""
         wrapped_phase = np.mod(self.elem_phase_shift, 2 * np.pi)
         
@@ -338,7 +338,7 @@ class RIS:
         plt.tight_layout()
         plt.show()
 
-    def export_pattern_to_csv(self, filename):
+    def export_pattern_to_csv(self, filename: str) -> None:
         """
         Export elem_state to a CSV-style string with comma-separated rows,
         like [[-1 -1],[-1 -1]], all in one line.
@@ -370,9 +370,9 @@ class RIS:
         except Exception as e:
             print(f"Error exporting RIS element state: {e}")
 
-    def copy(self):
+    def copy(self) -> 'RIS':
         return copy.deepcopy(self)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"RIS({self.Nrow}x{self.Ncol}, boresight='{self.boresight}', center={self.center.tolist()})"
     
