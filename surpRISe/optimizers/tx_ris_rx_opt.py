@@ -1,7 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.constants import c, pi
-from scipy.optimize import minimize_scalar
+
+from surpRISe.utils.utils import *
+from surpRISe.components.antenna import Antenna
+from surpRISe.components.ris import RIS
 
 def calc_spherical_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris_positions: np.ndarray, fc: float) -> np.ndarray:
     """
@@ -37,7 +40,7 @@ def calc_spherical_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris_po
 
     return total_exp_shift
 
-def calc_plane_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris: 'RIS', fc: float) -> np.ndarray:
+def calc_plane_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris: RIS, fc: float) -> np.ndarray:
     """
     Compute the total exp phase shift from Tx to RIS to Rx
     under the plane wavefront assumption.
@@ -92,8 +95,82 @@ def calc_plane_path_exp_shift(tx_pos: np.ndarray, rx_pos: np.ndarray, ris: 'RIS'
 
     return total_exp_shift
 
+def calc_total_path_exp_shift(tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, wave_model: str = 'spherical') -> np.ndarray:
+    """
+    Computethe total exp phase shift for each RIS element
+    depending on the wave model.
+
+    Parameters:
+    -----------
+    tx_pos : array-like of shape (3,)
+        Transmitter position in Cartesian coordinates (x, y, z).
+    rx_pos : array-like of shape (3,)
+        Receiver position in Cartesian coordinates (x, y, z).
+    ris : object of type RIS
+        RIS object.
+    wave_model : str
+        Wave model to use ('spherical' or 'plane').
+
+    Returns:
+    --------
+    total_path_exp_shift : complex array of shape (Nrow, Ncol)
+        Total complex exponential phase term for each RIS element.
+    """
+    # Compute total path exponential shift depending on wave model
+    if wave_model == "spherical":
+        total_path_exp_shift = calc_spherical_path_exp_shift(
+            tx_pos=tx_antenna.position,
+            rx_pos=rx_antenna.position,
+            ris_positions=ris.positions,
+            fc=ris.fc
+        )
+
+    elif wave_model == "plane":
+        total_path_exp_shift = calc_plane_path_exp_shift(
+            tx_antenna.position,
+            rx_antenna.position,
+            ris,
+            ris.fc
+        )
+
+    else:
+        raise ValueError("Invalid wave_model. Use 'spherical' or 'plane'.")
+    
+    return total_path_exp_shift
+
+def calc_tx_ris_rx_cont_opt(tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, wave_model: str = 'spherical') -> np.ndarray:
+    """
+    Compute optimal continuous phase shift for each RIS element.
+
+    Parameters:
+    -----------
+    tx_pos : array-like of shape (3,)
+        Transmitter position in Cartesian coordinates (x, y, z).
+    rx_pos : array-like of shape (3,)
+        Receiver position in Cartesian coordinates (x, y, z).
+    ris : object of type RIS
+        RIS object.
+    wave_model : str
+        Wave model to use ('spherical' or 'plane').
+
+    Returns:
+    --------
+    desired_complex : complex array of shape (Nrow, Ncol)
+        Desired complex term for each RIS element.
+    desired_phase : complex array of shape (Nrow, Ncol)
+        Desired phase term for each RIS element.
+    """
+    # Compute total path exponential shift depending on wave model
+    total_path_exp_shift = calc_total_path_exp_shift(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+
+    # Calculate continuous (perfect) phase shift for each RIS element
+    desired_complex = total_path_exp_shift ** -1
+    desired_phase = np.angle(desired_complex)
+
+    return desired_complex, desired_phase
+
 class tx_ris_rx_direct_disc_opt:
-    def __init__(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None, mode: str = 'disc', wave_model: str = 'spherical') -> None:
+    def __init__(self, tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, wave_model: str = 'spherical') -> None:
         """
         Parameters:
         -----------
@@ -103,8 +180,8 @@ class tx_ris_rx_direct_disc_opt:
             Receiver antenna object (must be provided).
         ris : RIS object
             Reconfigurable Intelligent Surface object (must be provided).
-        mode : str
-            Phase configuration mode for RIS ('disc' or 'cont').
+        wave_model : str
+            Wave model to use ('spherical' or 'plane').
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -116,8 +193,6 @@ class tx_ris_rx_direct_disc_opt:
         self.tx_antenna = tx_antenna
         self.rx_antenna = rx_antenna
         self.ris = ris
-
-        self.mode = mode.lower()
         self.wave_model = wave_model.lower()
 
     def optimize(self) -> np.ndarray:
@@ -131,51 +206,28 @@ class tx_ris_rx_direct_disc_opt:
             "spherical" => phases computed assuming spherical wavefronts.
             "plane"     => phases computed assuming plane wavefronts.
         """
-        # Compute total path exponential shift depending on wave model
-        if self.wave_model == "spherical":
-            total_path_exp_shift = calc_spherical_path_exp_shift(
-                self.tx_antenna.position,
-                self.rx_antenna.position,
-                self.ris.positions,
-                self.ris.fc
-            )
-
-        elif self.wave_model == "plane":
-            total_path_exp_shift = calc_plane_path_exp_shift(
-                self.tx_antenna.position,
-                self.rx_antenna.position,
-                self.ris,
-                self.ris.fc
-            )
-
-        else:
-            raise ValueError("Invalid wave_model. Use 'spherical' or 'plane'.")
         
-        # Calculate cont (perfect) phase shift
-        desired_complex = total_path_exp_shift ** -1
-        desired_phase = np.angle(desired_complex)
+        desired_complex, desired_phase = calc_tx_ris_rx_cont_opt(
+            tx_antenna=self.tx_antenna, 
+            rx_antenna=self.rx_antenna, 
+            ris=self.ris, 
+            wave_model=self.wave_model
+        )
 
-        if self.mode == "cont":
-            return desired_phase
-
-        elif self.mode == "disc":
-            # Discretize phase to nearest value in phase_shifts_dict
-            discrete_phase = np.zeros_like(desired_phase)
-            # Valid shifts from dictionary
-            valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
-            for i in range(self.ris.Nrow):
-                for j in range(self.ris.Ncol):
-                    phase_diffs = np.abs(np.angle(np.exp(1j * valid_discrete_shifts) / desired_complex[i, j]))
-                    idx = np.argmin(phase_diffs)
-                    state_key = list(self.ris.phase_shifts_dict.keys())[idx]
-                    discrete_phase[i, j] = self.ris.phase_shifts_dict[state_key]
-            return discrete_phase
-
-        else:
-            raise ValueError("Invalid mode. Use 'disc' or 'cont'.")
+        # Discretize phase to nearest value in phase_shifts_dict
+        discrete_phase = np.zeros_like(desired_phase, dtype=float)
+        # Valid shifts from dictionary
+        valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
+        for i in range(self.ris.Nrow):
+            for j in range(self.ris.Ncol):
+                phase_diffs = np.abs(np.angle(np.exp(1j * valid_discrete_shifts) / desired_complex[i, j]))
+                idx = np.argmin(phase_diffs)
+                state_key = list(self.ris.phase_shifts_dict.keys())[idx]
+                discrete_phase[i, j] = self.ris.phase_shifts_dict[state_key]
+        return discrete_phase
             
 class tx_ris_rx_max_bf_opt:
-    def __init__(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None, mode: str = 'disc') -> None:
+    def __init__(self, tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, wave_model: str = 'spherical') -> None:
         """
         Parameters:
         -----------
@@ -185,8 +237,8 @@ class tx_ris_rx_max_bf_opt:
             Receiver antenna object (must be provided).
         ris : RIS object
             Reconfigurable Intelligent Surface object (must be provided).
-        mode : str
-            Phase configuration mode for RIS ('disc' or 'cont').
+        wave_model : str
+            Wave model to use ('spherical' or 'plane').
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -198,8 +250,7 @@ class tx_ris_rx_max_bf_opt:
         self.tx_antenna = tx_antenna
         self.rx_antenna = rx_antenna
         self.ris = ris
-
-        self.mode = mode.lower()
+        self.wave_model = wave_model.lower()
 
     def optimize(self) -> np.ndarray:
         """
@@ -212,103 +263,127 @@ class tx_ris_rx_max_bf_opt:
             "spherical" => phases computed assuming spherical wavefronts.
             "plane"     => phases computed assuming plane wavefronts.
         """
-        # Compute total path exponential shift depending on wave model
-        if self.wave_model == "spherical":
-            total_path_exp_shift = calc_spherical_path_exp_shift(
-                self.tx_antenna.position,
-                self.rx_antenna.position,
-                self.ris.positions,
-                self.ris.fc
-            )
 
-        elif self.wave_model == "plane":
-            total_path_exp_shift = calc_plane_path_exp_shift(
-                self.tx_antenna.position,
-                self.rx_antenna.position,
-                self.ris,
-                self.ris.fc
-            )
+        desired_complex, desired_phase = calc_tx_ris_rx_cont_opt(
+            tx_antenna=self.tx_antenna, 
+            rx_antenna=self.rx_antenna, 
+            ris=self.ris, 
+            wave_model=self.wave_model
+        )
 
-        else:
-            raise ValueError("Invalid wave_model. Use 'spherical' or 'plane'.")
-        
-        # Calculate cont (perfect) phase shift
-        desired_complex = total_path_exp_shift ** -1
-        desired_phase = np.angle(desired_complex)
+        total_path_exp_shift = desired_complex ** -1
 
-        if self.mode == "cont":
-            return desired_phase
+        valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
 
-        elif self.mode == "disc":
-            valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
+        # Grid search
+        alphas = np.linspace(0, 2 * np.pi, 360)
+        best_bf = -np.inf
+        best_alpha = 0
 
-            # Minimization algorithm (does not work correctly):
-            # def objective(alpha):
-            #     # Adjusted phase with alpha
-            #     desired_complex_alpha = desired_complex * np.exp(1j * alpha)
+        for alpha in alphas:
+            desired_complex_alpha = desired_complex * np.exp(1j * alpha)
+            discrete_phase = np.zeros_like(desired_phase, dtype=float)
 
-            #     # Initialize discrete phases matrix
-            #     discrete_phase = np.zeros_like(desired_phase)
-
-            #     # Discretize each element
-            #     for i in range(self.ris.Nrow):
-            #         for j in range(self.ris.Ncol):
-            #             phase_diffs = np.abs(np.angle(np.exp(1j * valid_discrete_shifts) / desired_complex_alpha[i, j]))
-            #             idx = np.argmin(phase_diffs)
-            #             discrete_phase[i, j] = valid_discrete_shifts[idx]
-
-            #     # Obtain exponential form of the discrete phases
-            #     exp_ris = np.exp(1j * discrete_phase)
-
-            #     # Calculate beamforming
-            #     bf = np.abs(np.sum(total_path_exp_shift * exp_ris)) ** 2
-
-            #     return -bf  # Minimize the neagitve Beamforming
-
-            # # Optimize in the interval [0, 2π]
-            # result = minimize_scalar(objective, bounds=(0, 2 * np.pi), method='bounded')
-            # alpha_opt = result.x
-
-            # Grid search
-            alphas = np.linspace(0, 2 * np.pi, 720)
-            best_bf = -np.inf
-            best_alpha = 0
-
-            for alpha in alphas:
-                desired_complex_alpha = desired_complex * np.exp(1j * alpha)
-                discrete_phase = np.zeros_like(desired_phase)
-
-                for i in range(self.ris.Nrow):
-                    for j in range(self.ris.Ncol):
-                        phase_diffs = np.abs(np.angle(np.exp(1j * valid_discrete_shifts) / desired_complex_alpha[i, j]))
-                        idx = np.argmin(phase_diffs)
-                        discrete_phase[i, j] = valid_discrete_shifts[idx]
-
-                exp_ris = np.exp(1j * discrete_phase)
-                bf = np.abs(np.sum(total_path_exp_shift * exp_ris)) ** 2
-
-                if bf > best_bf:
-                    best_bf = bf
-                    best_alpha = alpha
-
-            alpha_opt = best_alpha
-
-            print(f"Optimum value of α: {alpha_opt:.3f} rad")
-
-            # Adjusted phase with optimal alpha
-            desired_complex_alpha = desired_complex * np.exp(1j * alpha_opt)
-
-            # Initialize discrete phases matrix
-            discrete_phase = np.zeros_like(desired_phase)
-
-            # Discretize each element
             for i in range(self.ris.Nrow):
                 for j in range(self.ris.Ncol):
                     phase_diffs = np.abs(np.angle(np.exp(1j * valid_discrete_shifts) / desired_complex_alpha[i, j]))
                     idx = np.argmin(phase_diffs)
                     discrete_phase[i, j] = valid_discrete_shifts[idx]
 
-            return discrete_phase
+            exp_ris = np.exp(1j * discrete_phase)
+            bf = np.abs(np.sum(total_path_exp_shift * exp_ris)) ** 2
 
-        else:
-            raise ValueError("Invalid mode. Use 'disc' or 'cont'.")
+            if bf > best_bf:
+                best_bf = bf
+                best_alpha = alpha
+                discrete_phase_alpha = discrete_phase.copy()
+
+        print(f"Optimum value of α: {best_alpha:.3f} rad")
+
+        return discrete_phase_alpha
+
+        
+class tx_ris_rx_min_phase_diff_opt:
+    def __init__(self, tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, wave_model: str = 'spherical') -> None:
+        """
+        Parameters:
+        -----------
+        tx_antenna : Antenna object
+            Transmitter antenna object (must be provided).
+        rx_antenna : Antenna object
+            Receiver antenna object (must be provided).
+        ris : RIS object
+            Reconfigurable Intelligent Surface object (must be provided).
+        wave_model : str
+            Wave model to use ('spherical' or 'plane').
+        """
+        if tx_antenna is None:
+            raise ValueError("tx_antenna must be provided")
+        if rx_antenna is None:
+            raise ValueError("rx_antenna must be provided")
+        if ris is None:
+            raise ValueError("ris must be provided")
+
+        self.tx_antenna = tx_antenna
+        self.rx_antenna = rx_antenna
+        self.ris = ris
+        self.wave_model = wave_model.lower()
+
+    def optimize(self) -> np.ndarray:
+        """
+        Compute optimal state (phase shift) for each RIS element. 
+        Based on minimizing euclidean phase difference. 
+        Defined in Algorithm 1 of Z. Chen, L. X. Cai and X. Hao, 
+        "Near-Field and Far-Field Beamforming Design for RIS-enabled 
+        Millimeter Wave Systems,", https://ieeexplore.ieee.org/document/10683528
+
+        - mode:
+            "cont" => exact inverse phase (continuous phase adjustment).
+            "disc" => quantized phase to nearest available RIS state.
+        - wave_model:
+            "spherical" => phases computed assuming spherical wavefronts.
+            "plane"     => phases computed assuming plane wavefronts.
+        """
+        # Calculate contiunous perfect phase shifts depending on wave model
+        total_path_exp_shift = calc_total_path_exp_shift(
+            tx_antenna=self.tx_antenna,
+            rx_antenna=self.rx_antenna,
+            ris=self.ris,
+            wave_model=self.wave_model
+        )
+
+        # Discretize phase initialization to zeros
+        discrete_phase_temp = np.zeros_like(total_path_exp_shift, dtype=float)
+        # Euclidean error variable to minimize (e_min)
+        e_min = np.inf
+
+        # Valid shifts from dictionary
+        valid_discrete_shifts = np.array(list(self.ris.phase_shifts_dict.values()))
+
+        for disc_shift_11 in valid_discrete_shifts:
+            # Set first element phase and end-to-end complex term
+            discrete_phase_temp[0, 0] = disc_shift_11
+            complex_11 = np.exp(1j * disc_shift_11) * total_path_exp_shift[0, 0]
+            # initialize e_temp
+            e_temp = 0
+
+            # Set remaining elements phases
+            for i in range(self.ris.Nrow):
+                for j in range(self.ris.Ncol):
+                    if i == 0 and j == 0:
+                        continue  # Skip first element
+
+                    phase_diffs = np.abs(valid_discrete_shifts - np.angle(complex_11 / total_path_exp_shift[i, j]))
+                    idx = np.argmin(phase_diffs)
+                    discrete_phase_temp[i, j] = valid_discrete_shifts[idx]
+
+                    # Calculate euclidean error for this configuration
+                    complex_ij = np.exp(1j * discrete_phase_temp[i, j]) * total_path_exp_shift[i, j]
+                    e_temp += np.linalg.norm(np.angle(complex_ij / complex_11))
+
+            # Update minimum error and best configuration
+            if e_temp < e_min:
+                e_min = e_temp
+                discrete_phase = discrete_phase_temp.copy()
+
+        return discrete_phase
