@@ -76,7 +76,7 @@ class Antenna:
         
         Parameters:
             angles (array-like): Vector of relative angles to the boresight (in degrees). Should be in crescent order.
-            values (array-like): Vector of normalized values for each combination of angles.
+            values (array-like): Vector of normalized linear values for each combination of angles.
         """
         angles = np.array(angles)
         values = np.array(values)

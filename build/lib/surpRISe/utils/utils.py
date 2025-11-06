@@ -1,4 +1,5 @@
 import numpy as np
+from surpRISe.components.ris import RIS
 
 def sph2cart(spherical_coords: np.ndarray) -> np.ndarray:
     """
@@ -101,4 +102,40 @@ def filt_round_decimals(array: np.ndarray, value: float, atol: float = 1e-12, rt
     array[mask] /= np.abs(array)[mask]
 
     return array
+
+def ris_ff_border(ris: RIS = None, fc: float = None, phase_error_rad: float = np.pi/8, phi_deg: float = None, theta_deg: float = None) -> float:
+    """
+    Computes the far-field border distance for a Reconfigurable Intelligent Surface (RIS).
+    Parameters:
+        ris : RIS
+            Reconfigurable Intelligent Surface object (must be of class RIS).
+        fc : float
+            Carrier frequency in Hz.
+        phase_error_rad : float
+            Acceptable phase error in radians (default is pi/8).
+        phi_deg : float
+            Azimuth angle in degrees.
+        theta_deg : float
+            Elevation angle in degrees.
+
+    Returns:
+        r_border : float
+            Far-field border distance in meters.
+    """
+
+    lam = 299792458 / fc
+    d = np.maximum(ris.delta_h, ris.delta_v) / lam
+    n = ris.Nrow
+    m = ris.Ncol
+
+    phi = np.radians(phi_deg)
+    theta = np.radians(theta_deg)
+    phase_error = np.abs(phase_error_rad)
+
+    b = ((n - 1) / 2) ** 2 + ((m - 1) / 2) ** 2
+    c = ((n - 1) / 2) * np.sin(theta) * np.cos(phi)  + ((m - 1) / 2) * np.sin(theta) * np.sin(phi)
+
+    r_border = (np.pi * b * d ** 2 - ((2 * np.pi * d * c - phase_error) ** 2 / (4 * np.pi))) * lam / phase_error 
+
+    return r_border
 

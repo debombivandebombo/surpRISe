@@ -1,9 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.constants import c, pi
+import time
 
 from surpRISe.utils.utils import *
-from surpRISe.optimizers.tx_ris_rx_opt import tx_ris_rx_direct_disc_opt, tx_ris_rx_max_bf_opt
+from surpRISe.optimizers.tx_ris_rx_opt import *
 from surpRISe.components.antenna import Antenna
 from surpRISe.components.ris import RIS
 
@@ -23,7 +24,7 @@ class tang_ff_channel:
         self.model_name: str = 'Tang General'
         self.last_optimizer: str = ''
 
-    def optimize(self, optimizer: str = 'max_bf', mode: str = 'disc', wave_model: str = 'spherical', tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None) -> None:
+    def optimize(self, optimizer: str = 'max_bf', mode: str = 'disc', wave_model: str = 'spherical', tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, verbose: bool = False) -> None:
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
 
@@ -45,6 +46,8 @@ class tang_ff_channel:
             Receiving antenna object (must be of class Antenna).
         ris : RIS, optional
             Reconfigurable Intelligent Surface object (must be of class RIS).
+        verbose : bool, optional
+            If True, prints additional information from optimization.
         """
 
         # Check if tx_antenna, rx_antenna, and ris are set
@@ -61,32 +64,56 @@ class tang_ff_channel:
             self.last_optimizer = ''    # If error, reset it
             raise ValueError("mode must be either 'disc' or 'cont'")
         
-        if mode == 'disc':
-            self.last_optimizer = optimizer     # Update last optimizer used
-        else:
-            self.last_optimizer = 'perfect'
-
         # Check correct wave_model name
         if wave_model not in ['spherical', 'plane']:
             raise ValueError("wave_model must be either 'spherical' or 'plane'")
+        
+        time_init = time.time()   # Start time optimizer
 
-        # Add extra optimizers as extra elif entries
-        if optimizer == 'direct_disc':
-            # Instantiate optimizer object
-            opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
-        elif optimizer == 'max_bf':
-            # Instantiate optimizer object
-            opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, mode=mode, wave_model=wave_model)
-        else:
-            raise ValueError("Invalid optimizer.")
+        if mode == 'cont':
+            self.last_optimizer = 'perfect'     # Update last optimizer used
+
+            # Calculate contiunous perfect phase shifts depending on wave model
+            desired_complex, desired_phase = calc_tx_ris_rx_cont_opt(
+                tx_pos=tx_antenna.position,
+                rx_pos=rx_antenna.position,
+                ris_positions=ris.positions,
+                fc=ris.fc,
+                wave_model=wave_model
+            )
+
+            opt_phase_shift = desired_phase
+
+        else:  # mode == 'disc'
+            self.last_optimizer = optimizer     # Update last optimizer used
+
+            # Add extra optimizers as extra elif entries
+            if optimizer == 'direct_disc':
+                # Instantiate optimizer object
+                opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+            elif optimizer == 'max_bf':
+                # Instantiate optimizer object
+                opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+            elif optimizer == 'min_phase_diff':
+                # Instantiate optimizer object
+                opt = tx_ris_rx_min_phase_diff_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+            else:
+                raise ValueError("Invalid optimizer.")
             
-        # Optimize the states
-        opt_phase_shift = opt.optimize()
+            # Optimize the states
+            opt_phase_shift = opt.optimize()
 
         # Update the ris states
         ris.set_all_shift(opt_phase_shift, mode=mode)
 
-    def phase_bf_multrx(self, tx_antenna: 'Antenna' = None, rx_positions: np.ndarray = None, ris: 'RIS' = None) -> np.ndarray:
+        time_end = time.time()     # End time optimizer
+        if verbose:
+            if mode == 'cont':
+                print(f"Optimizer 'Continuous': Optimizing time {time_end - time_init:.4f} sec.")
+            else:  # mode == 'disc'
+                print(f"Optimizer 'discrete {optimizer}': Optimizing time {time_end - time_init:.4f} sec.")
+
+    def phase_bf_multrx(self, tx_antenna: Antenna = None, rx_positions: np.ndarray = None, ris: RIS = None) -> np.ndarray:
         """
         Compute the phase beamforming response at multiple receiver (RX) locations
         considering the transmission path TX → RIS → RX.
@@ -188,7 +215,7 @@ class tang_ff_channel:
 
         return np.abs(phase_sums)**2
 
-    def path_gain_multrx(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, rx_positions: np.ndarray = None, ris: 'RIS' = None) -> np.ndarray:
+    def path_gain_multrx(self, tx_antenna: Antenna = None, rx_antenna: Antenna = None, rx_positions: np.ndarray = None, ris: RIS = None) -> np.ndarray:
         """
         Compute the total path gain at multiple receiver (RX) locations
         considering the transmission path TX → RIS → RX.
@@ -201,8 +228,10 @@ class tang_ff_channel:
         ----------
         tx_antenna : object
             Transmitter antenna object containing position and gain attributes.
+        rx_antenna : object
+            Receiver antenna object containing position and gain attributes.
         rx_positions : ndarray of shape (Nrx, 3)
-            Array with the 3D positions of the receivers.
+            Array with the 3D positions of the receivers based on rx_antenna hardware.
         ris : object
             RIS object containing geometry (positions, element spacing, center),
             carrier frequency, reflection coefficients, and radiation patterns.
@@ -318,7 +347,7 @@ class tang_ff_channel:
 
         return path_gains
 
-    def plot_phase_bf_2d_map(self, tx_antenna: 'Antenna' = None, ris: 'RIS' = None, ax1lim: list = None, ax2lim: list = None, Nax1: int = None, Nax2: int = None, plane: str = 'xz') -> None:
+    def plot_phase_bf_2d_map(self, tx_antenna: Antenna = None, ris: RIS = None, ax1lim: list = None, ax2lim: list = None, Nax1: int = None, Nax2: int = None, plane: str = 'xz') -> None:
         """
         Plot a 2D heatmap of the normalized beamforming distribution over a specified plane.
 
@@ -395,7 +424,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_path_gain_2d_map(self, tx_antenna: 'Antenna' = None, rx_antenna: 'Antenna' = None, ris: 'RIS' = None, ax1lim: list = None, ax2lim: list = None, Nax1: int = None, Nax2: int = None, plane: str = 'xz', vmin: int = -160, vmax: int = -80) -> None:
+    def plot_path_gain_2d_map(self, tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, ax1lim: list = None, ax2lim: list = None, Nax1: int = None, Nax2: int = None, plane: str = 'xz', vmin: int = -160, vmax: int = -80) -> None:
         """
         Plot a 2D heatmap of the RIS-assisted path gain distribution over a specified plane.
 
@@ -476,7 +505,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_phase_bf_angle(self, ris: 'RIS', tx_antenna: 'Antenna', r: float, Nr: int, axis: str = 'x') -> None:
+    def plot_phase_bf_angle(self, ris: RIS, tx_antenna: Antenna, r: float, Nr: int, axis: str = 'x') -> None:
         """
         Plots the normalized phase beamforming gain as a function of angle in a 2D plane.
 
@@ -529,7 +558,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_path_gain_angle(self, tx_antenna: 'Antenna', rx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int, axis: str = 'x', vmin: int = -160, vmax: int = -80) -> None:
+    def plot_path_gain_angle(self, tx_antenna: Antenna, rx_antenna: Antenna, ris: RIS, r: float, Nr: int, axis: str = 'x', vmin: int = -160, vmax: int = -80) -> None:
         """
         Plots the path gain (in dB) as a function of angle in a 2D plane around the RIS.
 
@@ -589,7 +618,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_phase_bf_dist(self, tx_antenna: 'Antenna', ris: 'RIS', phi_deg: float, theta_deg: float, r1: float, r2: float, Nr: int) -> None:
+    def plot_phase_bf_dist(self, tx_antenna: Antenna, ris: RIS, phi_deg: float, theta_deg: float, r1: float, r2: float, Nr: int) -> None:
         """
         Plots the normalized phase beamforming gain as a function of distance 
         along a fixed 3D direction from the RIS center.
@@ -668,7 +697,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_path_gain_dist(self, tx_antenna: 'Antenna', rx_antenna: 'Antenna', ris: 'RIS', phi_deg: float, theta_deg: float, r1: float, r2: float, Nr: int, vmin: int = -160, vmax: int = -80) -> None:
+    def plot_path_gain_dist(self, tx_antenna: Antenna, rx_antenna: Antenna, ris: RIS, phi_deg: float, theta_deg: float, r1: float, r2: float, Nr: int, vmin: int = -160, vmax: int = -80) -> None:
         """
         Plots the path gain (in dB) as a function of distance from the RIS center 
         along a fixed 3D direction.
@@ -757,7 +786,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_phase_bf_angle_2d_map(self, tx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int) -> None:
+    def plot_phase_bf_angle_2d_map(self, tx_antenna: Antenna, ris: RIS, r: float, Nr: int) -> None:
         """
         Plots a 2D angular heatmap of the normalized phase beamforming gain 
         over a spherical surface centered at the RIS.
@@ -827,7 +856,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_path_gain_angle_2d_map(self, tx_antenna: 'Antenna', rx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int, vmin: int = -160, vmax: int = -80) -> None:
+    def plot_path_gain_angle_2d_map(self, tx_antenna: Antenna, rx_antenna: Antenna, ris: RIS, r: float, Nr: int, vmin: int = -160, vmax: int = -80) -> None:
         """
         Plots a 2D angular heatmap of the path gain (in dB) in spherical coordinates 
         around the RIS.
@@ -907,7 +936,7 @@ class tang_ff_channel:
         plt.tight_layout()
         plt.show()
 
-    def plot_phase_bf_angle_2d_polar(self, tx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int) -> None:
+    def plot_phase_bf_angle_2d_polar(self, tx_antenna: Antenna, ris: RIS, r: float, Nr: int) -> None:
         """
         Plots a 2D polar map of the normalized phase beamforming gain 
         over a spherical surface centered at the RIS.
@@ -1000,7 +1029,7 @@ class tang_ff_channel:
 
         plt.show()
 
-    def plot_path_gain_angle_2d_polar(self, tx_antenna: 'Antenna', rx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int, vmin: int = -160, vmax: int = -60) -> None:
+    def plot_path_gain_angle_2d_polar(self, tx_antenna: Antenna, rx_antenna: Antenna, ris: RIS, r: float, Nr: int, vmin: int = -160, vmax: int = -60) -> None:
         """
         Plots a 2D polar map of the path gain over a spherical
         surface centered at the RIS.
@@ -1107,7 +1136,7 @@ class tang_ff_channel:
 
         plt.show()
 
-    def plot_phase_bf_angle_3d(self, tx_antenna: 'Antenna', ris: 'RIS', r: float, Nr: int) -> None:
+    def plot_phase_bf_angle_3d(self, tx_antenna: Antenna, ris: RIS, r: float, Nr: int) -> None:
         """
         Plot the 3D normalized phase beamforming pattern of a RIS.
 
