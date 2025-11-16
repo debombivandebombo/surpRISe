@@ -23,15 +23,18 @@ class tang_general_channel:
         """
         self.model_name: str = 'Tang General'
         self.last_optimizer: str = ''
+        
+        # List of optimizers that support 'return_history'
+        self.new_optimizers = ['1d_search', 'iterative', 'grid_search']
 
-    def optimize(self, optimizer: str = 'max_bf', mode: str = 'disc', wave_model: str = 'spherical', tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, verbose: bool = False) -> None:
+    def optimize(self, optimizer: str = 'iterative', mode: str = 'disc', wave_model: str = 'spherical', tx_antenna: Antenna = None, rx_antenna: Antenna = None, ris: RIS = None, verbose: bool = False) -> None:
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
 
         Parameters
         ----------
         optimizer : str
-            Name of the optimization strategy (e.g., 'direct_disc', 'max_bf', 'min_phase_diff').
+            Name of the optimization strategy (e.g., 'direct_disc', 'grid_search', 'chen_alg1').
         mode : str
             Phase configuration mode for the RIS: 
             - 'disc' : discrete phase shifts.
@@ -50,67 +53,133 @@ class tang_general_channel:
             If True, prints additional information from optimization.
         """
 
-        # Check if tx_antenna, rx_antenna, and ris are set
-        # Comprobación de tipos de entrada
+        # Coheck input types
         if tx_antenna is not None and not isinstance(tx_antenna, Antenna):
             raise ValueError("tx_antenna must be of class Antenna")
         if rx_antenna is not None and not isinstance(rx_antenna, Antenna):
             raise ValueError("rx_antenna must be of class Antenna")
         if ris is not None and not isinstance(ris, RIS):
             raise ValueError("ris must be of class RIS")
-    
-        # Check correct mode name
         if mode not in ['disc', 'cont']:
-            self.last_optimizer = ''    # If error, reset it
+            self.last_optimizer = ''
             raise ValueError("mode must be either 'disc' or 'cont'")
-
-        # Check correct wave_model name
         if wave_model not in ['spherical', 'plane']:
             raise ValueError("wave_model must be either 'spherical' or 'plane'")
         
-        time_init = time.time()   # Start time optimizer
+        time_init = time.time()
         
         if mode == 'cont':
-            self.last_optimizer = 'perfect'     # Update last optimizer used
-
-            # Calculate contiunous perfect phase shifts depending on wave model
+            self.last_optimizer = 'perfect'
             desired_complex, desired_phase = calc_tx_ris_rx_cont_opt(
-                tx_antenna=tx_antenna, 
-                rx_antenna=rx_antenna, 
-                ris=ris, 
-                wave_model=wave_model
-            )
-
+                tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+            
             opt_phase_shift = desired_phase
 
-        else:  # mode == 'disc'
-            self.last_optimizer = optimizer     # Update last optimizer used
-
-            # Add extra optimizers as extra elif entries
-            if optimizer == 'direct_disc':
-                # Instantiate optimizer object
-                opt = tx_ris_rx_direct_disc_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
-            elif optimizer == 'max_bf':
-                # Instantiate optimizer object
-                opt = tx_ris_rx_max_bf_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
-            elif optimizer == 'min_phase_diff':
-                # Instantiate optimizer object
-                opt = tx_ris_rx_min_phase_diff_opt(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
-            else:
-                raise ValueError("Invalid optimizer.")
+        else: # mode == 'disc'
+            self.last_optimizer = optimizer
+            opt_history = None
             
-            # Optimize the states
-            opt_phase_shift = opt.optimize()
+            # Map of optimizer names to classes
+            optimizers_map = {
+                'direct_disc': tx_ris_rx_direct_disc_opt,
+                'grid_search': tx_ris_rx_max_bf_grid_search_opt,
+                'chen_alg1': tx_ris_rx_chen_alg1_opt,
+                '1d_search': tx_ris_rx_max_bf_1D_search_opt,
+                'iterative': tx_ris_rx_max_bf_iterative_opt
+            }
+
+            if optimizer not in optimizers_map:
+                raise ValueError(f"Invalid optimizer: {optimizer}")
+
+            # Instantiate the correct optimizer
+            OptClass = optimizers_map[optimizer]
+            opt = OptClass(tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model)
+
+            # Optimization call and unpacking
+            if optimizer in self.new_optimizers:
+                # New optimizers accept 'return_history'
+                opt_result = opt.optimize(return_history=verbose)
+            else:
+                # Old optimizers are called without arguments
+                opt_result = opt.optimize()
+
+            # Conditional unpacking
+            if verbose and optimizer in self.new_optimizers and isinstance(opt_result, tuple):
+                opt_phase_shift, opt_history = opt_result
+            else:
+                opt_phase_shift = opt_result
 
         # Update the ris states
         ris.set_all_shift(opt_phase_shift, mode=mode)
 
-        time_end = time.time()     # End time optimizer
+        time_end = time.time()
+        
         if verbose:
             if mode == 'cont':
                 print(f"Optimizer 'Continuous': Optimizing time {time_end - time_init:.4f} sec.")
-            else:  # mode == 'disc'
+            else: # mode == 'disc'
                 print(f"Optimizer 'discrete {optimizer}': Optimizing time {time_end - time_init:.4f} sec.")
+            
+            # Call the plotter if we have history
+            if opt_history is not None:
+                self._plot_optimizer_history(opt_history, optimizer)
+                
+    def _plot_optimizer_history(self, history: dict, optimizer_name: str) -> None:
+        """
+        Draws the optimization history based on the optimizer name.
+        """
+        plt.figure(figsize=(6, 4))
+
+        if optimizer_name == '1d_search':
+            print("Plotting 1D Search Landscape...")
+            plt.scatter(history['alphas'], history['gains'], s=5, alpha=0.6, label='Tested Points')
+            # Highlight the maximum point
+            idx_max = np.argmax(history['gains'])
+            plt.scatter(history['alphas'][idx_max], history['gains'][idx_max], 
+                        c='red', s=50, label='Maximum Found', zorder=5)
+            plt.title(f"Gain Landscape (Opt: 1D Search)")
+            plt.xlabel("Alpha (rad)")
+            plt.ylabel("Normalized BF Gain")
+            plt.legend()
+    
+        elif optimizer_name == 'iterative':
+            print("Plotting Iterative Convergence...")
+            plt.plot(history['iteration'], history['gains'], 'bo-', label='Gain vs Iteration')
+            plt.title(f"Gain Convergence (Opt: Iterative)")
+            plt.xlabel("Iteration")
+            plt.ylabel("Normalized BF Gain")
+            plt.ticklabel_format(axis='y', style='plain', useOffset=False)
+            plt.legend()
+            
+            # Optional: add a secondary Y-axis to see 'alpha'
+            ax2 = plt.gca().twinx()
+            ax2.plot(history['iteration'], history['alphas'], 'r.--', label='Alpha vs Iteration')
+            ax2.set_ylabel("Alpha (rad)", color='r')
+            ax2.tick_params(axis='y', labelcolor='r')
+            plt.legend()
+            
+        elif optimizer_name == 'grid_search':
+            print("Plotting Grid Search Landscape...")
+            plt.plot(history['alphas'], history['gains'], label='Gain vs Alpha')
+            
+            # Highlight the maximum
+            idx_max = np.argmax(history['gains'])
+            plt.scatter(history['alphas'][idx_max], history['gains'][idx_max], 
+                        c='red', s=50, label='Maximum Found', zorder=5)
+            
+            plt.title(f"Gain Landscape (Opt: Grid Search)")
+            plt.xlabel("Alpha (rad)")
+            plt.ylabel("Normalized BF Gain")
+            plt.legend()
+
+        else:
+            # Should not happen if 'optimize' logic is correct
+            print(f"Warning: _plot_optimizer_history does not know how to plot '{optimizer_name}'.")
+            return
+
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 
     def phase_bf_multrx(self, tx_antenna: Antenna = None, rx_positions: np.ndarray = None, ris: RIS = None) -> np.ndarray:
         """
