@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "surpRISe"
+version = "0.1.0"
+description = "surpRISe: Simulator Under Reconfigurable Propagation in RIS Environments"
+readme = "README.md"
+authors = [
+    { name = "Sergio Micó Rosa", email = "sermiro@iteam.upv.es" }
+]
+requires-python = ">=3.12"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.3.5",
+    "plotly>=6.5.0",
+    "scienceplots>=2.2.0",
+    "scipy>=1.10.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/sergiomico/surpRISe"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/surpRISe"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src"]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "ruff>=0.14.9",
+]
+
+[tool.ruff]
+# The code is compatible with Python 3.8+
+target-version = "py38"
+line-length = 88
+
+[tool.ruff.lint]
+# Activate error rules (E), warnings (W), 
+# import rules (I) and other useful ones.
+select = ["E", "F", "I", "W", "B"]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

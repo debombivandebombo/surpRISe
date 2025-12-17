@@ -1,13 +1,32 @@
-# Compiled files
-__pycache__/
-*.py[cod]
-
-# Packaging
-*.egg-info/
-
-# Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
-# Entornos virtuales (si los creas dentro del repo)
+# Virtual environments
 .venv/
 env/
+venv/
+ENV/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.python-version
+
+# Distribution / Packages
+dist/
+build/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Development tools
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
