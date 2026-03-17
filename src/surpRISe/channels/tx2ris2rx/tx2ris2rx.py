@@ -1,5 +1,6 @@
 import time
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,6 +42,7 @@ class tx2ris2rx(ABC):
         rx_antenna: Antenna = None,
         ris: RIS = None,
         verbose: bool = False,
+        fc: Optional[float] = None,
     ) -> None:
         """
         Optimize the RIS phase configuration given the selected optimizer and system elements.
@@ -65,6 +67,8 @@ class tx2ris2rx(ABC):
             Reconfigurable Intelligent Surface object (must be of class RIS).
         verbose : bool, optional
             If True, prints additional information from optimization.
+        fc : float, optional
+            Carrier frequency in Hz to use for optimization. If None, uses ris.fc.
         """
 
         # Coheck input types
@@ -89,6 +93,7 @@ class tx2ris2rx(ABC):
                 rx_antenna=rx_antenna,
                 ris=ris,
                 wave_model=wave_model,
+                fc=fc,
             )
 
             opt_phase_shift = desired_phase
@@ -116,6 +121,7 @@ class tx2ris2rx(ABC):
                 rx_antenna=rx_antenna,
                 ris=ris,
                 wave_model=wave_model,
+                fc=fc,
             )
 
             # Optimization call and unpacking
@@ -471,10 +477,11 @@ class tx2ris2rx(ABC):
         )
 
         plt.figure(figsize=(6, 4))
+        pg_db = 10 * np.log10(np.maximum(pg.reshape(Nax1, Nax2), 1e-30))
         pcm = plt.pcolormesh(
             A1,
             A2,
-            10 * np.log10(pg.reshape(Nax1, Nax2)),
+            pg_db,
             shading="auto",
             cmap="viridis",
             vmin=vmin,

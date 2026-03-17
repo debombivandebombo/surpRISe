@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.constants import c, pi
+from typing import Optional
 
 from surpRISe.components.antenna import Antenna
 from surpRISe.components.ris import RIS
@@ -110,9 +111,10 @@ def calc_total_path_exp_shift(
     rx_antenna: Antenna = None,
     ris: RIS = None,
     wave_model: str = "spherical",
+    fc: Optional[float] = None,
 ) -> np.ndarray:
     """
-    Computethe total exp phase shift for each RIS element
+    Compute the total exp phase shift for each RIS element
     depending on the wave model.
 
     Parameters:
@@ -125,24 +127,29 @@ def calc_total_path_exp_shift(
         RIS object.
     wave_model : str
         Wave model to use ('spherical' or 'plane').
+    fc : float, optional
+        Carrier frequency in Hz. If None, uses ris.fc.
 
     Returns:
     --------
     total_path_exp_shift : complex array of shape (Nrow, Ncol)
         Total complex exponential phase term for each RIS element.
     """
+    # Resolve frequency: use provided fc or fall back to ris.fc
+    freq = fc if fc is not None else ris.fc
+
     # Compute total path exponential shift depending on wave model
     if wave_model == "spherical":
         total_path_exp_shift = calc_spherical_path_exp_shift(
             tx_pos=tx_antenna.position,
             rx_pos=rx_antenna.position,
             ris_positions=ris.positions,
-            fc=ris.fc,
+            fc=freq,
         )
 
     elif wave_model == "plane":
         total_path_exp_shift = calc_plane_path_exp_shift(
-            tx_antenna.position, rx_antenna.position, ris, ris.fc
+            tx_antenna.position, rx_antenna.position, ris, freq
         )
 
     else:
@@ -156,6 +163,7 @@ def calc_tx_ris_rx_cont_opt(
     rx_antenna: Antenna = None,
     ris: RIS = None,
     wave_model: str = "spherical",
+    fc: Optional[float] = None,
 ) -> np.ndarray:
     """
     Compute optimal continuous phase shift for each RIS element.
@@ -170,6 +178,8 @@ def calc_tx_ris_rx_cont_opt(
         RIS object.
     wave_model : str
         Wave model to use ('spherical' or 'plane').
+    fc : float, optional
+        Carrier frequency in Hz. If None, uses ris.fc.
 
     Returns:
     --------
@@ -180,7 +190,7 @@ def calc_tx_ris_rx_cont_opt(
     """
     # Compute total path exponential shift depending on wave model
     total_path_exp_shift = calc_total_path_exp_shift(
-        tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model
+        tx_antenna=tx_antenna, rx_antenna=rx_antenna, ris=ris, wave_model=wave_model, fc=fc
     )
 
     # Calculate continuous (perfect) phase shift for each RIS element
@@ -222,6 +232,7 @@ class tx_ris_rx_direct_disc_opt:
         rx_antenna: Antenna = None,
         ris: RIS = None,
         wave_model: str = "spherical",
+        fc: Optional[float] = None,
     ) -> None:
         """
         Parameters:
@@ -234,6 +245,8 @@ class tx_ris_rx_direct_disc_opt:
             Reconfigurable Intelligent Surface object (must be provided).
         wave_model : str
             Wave model to use ('spherical' or 'plane').
+        fc : float, optional
+            Carrier frequency in Hz for optimization. If None, uses ris.fc.
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -246,6 +259,7 @@ class tx_ris_rx_direct_disc_opt:
         self.rx_antenna = rx_antenna
         self.ris = ris
         self.wave_model = wave_model.lower()
+        self.fc = fc
 
     def optimize(self) -> np.ndarray:
         """
@@ -258,6 +272,7 @@ class tx_ris_rx_direct_disc_opt:
             rx_antenna=self.rx_antenna,
             ris=self.ris,
             wave_model=self.wave_model,
+            fc=self.fc,
         )
 
         # Obtain valid discrete phase shifts from RIS dictionary
@@ -280,6 +295,7 @@ class tx_ris_rx_chen_alg1_opt:
         rx_antenna: Antenna = None,
         ris: RIS = None,
         wave_model: str = "spherical",
+        fc: Optional[float] = None,
     ) -> None:
         """
         Parameters:
@@ -292,6 +308,8 @@ class tx_ris_rx_chen_alg1_opt:
             Reconfigurable Intelligent Surface object (must be provided).
         wave_model : str
             Wave model to use ('spherical' or 'plane').
+        fc : float, optional
+            Carrier frequency in Hz for optimization. If None, uses ris.fc.
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -304,6 +322,7 @@ class tx_ris_rx_chen_alg1_opt:
         self.rx_antenna = rx_antenna
         self.ris = ris
         self.wave_model = wave_model.lower()
+        self.fc = fc
 
     def optimize(self) -> np.ndarray:
         """
@@ -319,6 +338,7 @@ class tx_ris_rx_chen_alg1_opt:
             rx_antenna=self.rx_antenna,
             ris=self.ris,
             wave_model=self.wave_model,
+            fc=self.fc,
         )
 
         # Initialize variables
@@ -370,6 +390,7 @@ class tx_ris_rx_max_bf_grid_search_opt:
         rx_antenna: Antenna = None,
         ris: RIS = None,
         wave_model: str = "spherical",
+        fc: Optional[float] = None,
     ) -> None:
         """
         Parameters:
@@ -382,6 +403,8 @@ class tx_ris_rx_max_bf_grid_search_opt:
             Reconfigurable Intelligent Surface object (must be provided).
         wave_model : str
             Wave model to use ('spherical' or 'plane').
+        fc : float, optional
+            Carrier frequency in Hz for optimization. If None, uses ris.fc.
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -394,6 +417,7 @@ class tx_ris_rx_max_bf_grid_search_opt:
         self.rx_antenna = rx_antenna
         self.ris = ris
         self.wave_model = wave_model.lower()
+        self.fc = fc
         self.max_bf = (self.ris.Nrow * self.ris.Ncol) ** 2
 
     def optimize(self, return_history: bool = False) -> np.ndarray:
@@ -408,6 +432,7 @@ class tx_ris_rx_max_bf_grid_search_opt:
             rx_antenna=self.rx_antenna,
             ris=self.ris,
             wave_model=self.wave_model,
+            fc=self.fc,
         )
 
         # Obtain channel matrix and discrete phase shifts
@@ -467,6 +492,7 @@ class tx_ris_rx_max_bf_iterative_opt:
         rx_antenna: Antenna = None,
         ris: RIS = None,
         wave_model: str = "spherical",
+        fc: Optional[float] = None,
     ) -> None:
         """
         Parameters:
@@ -479,6 +505,8 @@ class tx_ris_rx_max_bf_iterative_opt:
             Reconfigurable Intelligent Surface object (must be provided).
         wave_model : str
             Wave model to use ('spherical' or 'plane').
+        fc : float, optional
+            Carrier frequency in Hz for optimization. If None, uses ris.fc.
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -492,6 +520,7 @@ class tx_ris_rx_max_bf_iterative_opt:
             ris,
             wave_model.lower(),
         )
+        self.fc = fc
         self.N = self.ris.Nrow * self.ris.Ncol
         self.max_bf = (self.ris.Nrow * self.ris.Ncol) ** 2
 
@@ -511,6 +540,7 @@ class tx_ris_rx_max_bf_iterative_opt:
             rx_antenna=self.rx_antenna,
             ris=self.ris,
             wave_model=self.wave_model,
+            fc=self.fc,
         )
         total_path_complex_shift = desired_complex**-1
         valid_discrete_shifts = np.array(
@@ -574,6 +604,7 @@ class tx_ris_rx_max_bf_1D_search_opt:
         rx_antenna: "Antenna" = None,
         ris: "RIS" = None,
         wave_model: str = "spherical",
+        fc: Optional[float] = None,
     ) -> None:
         """
         Parameters:
@@ -586,6 +617,8 @@ class tx_ris_rx_max_bf_1D_search_opt:
             Reconfigurable Intelligent Surface object (must be provided).
         wave_model : str
             Wave model to use ('spherical' or 'plane').
+        fc : float, optional
+            Carrier frequency in Hz for optimization. If None, uses ris.fc.
         """
         if tx_antenna is None:
             raise ValueError("tx_antenna must be provided")
@@ -599,6 +632,7 @@ class tx_ris_rx_max_bf_1D_search_opt:
             ris,
             wave_model.lower(),
         )
+        self.fc = fc
         self.N = self.ris.Nrow * self.ris.Ncol
         self.max_bf = (self.ris.Nrow * self.ris.Ncol) ** 2
 
@@ -636,6 +670,7 @@ class tx_ris_rx_max_bf_1D_search_opt:
             rx_antenna=self.rx_antenna,
             ris=self.ris,
             wave_model=self.wave_model,
+            fc=self.fc,
         )
 
         total_path_complex_shift = desired_complex**-1
