@@ -13,7 +13,6 @@ import sys
 import os
 import json
 import socket
-import urllib.request
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -23,7 +22,8 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..", "src")))
 # Importación de los módulos existentes en el proyecto surpRISe
 from surpRISe.components.antenna import Antenna
 from surpRISe.components.ris import RIS
-from surpRISe.channels.tx2ris2rx.tang_general_channel import TangGeneralChannel
+from surpRISe.components.ris_controller import RISConfig, RISServerController
+from surpRISe.channels.tx2ris2rx.tang_general_channel import tang_general_channel
 
 print("✓ Módulos cargados correctamente.")
 
@@ -33,11 +33,9 @@ print("✓ Módulos cargados correctamente.")
 # CELDA 2: PARÁMETROS DEL EXPERIMENTO (MODIFICA ESTOS VALORES SEGÚN TU SETUP)
 # =============================================================================
 
-# --- 1. Conexión con ris_hardware_server.py ---
+# --- 1. Conexión con ris_hardware_server.py (UDP) ---
 SERVER_IP = "127.0.0.1"         # <--- [MODIFICABLE] IP donde corre ris_hardware_server.py (ej. "192.168.1.100")
-SERVER_PORT = 8000              # <--- [MODIFICABLE] Puerto configurado en ris_hardware_server.py
-SERVER_PROTOCOL = "http"        # <--- [MODIFICABLE] "http" (REST/JSON) o "socket" (TCP raw) según tu servidor
-SERVER_ENDPOINT = "/set_ris"    # <--- [MODIFICABLE] Ruta del endpoint si tu servidor usa HTTP (ej. "/configure" o "/")
+SERVER_PORT = 17000             # <--- [MODIFICABLE] Puerto UDP configurado en ris_hardware_server.py
 ENVIAR_AL_SERVIDOR = True       # <--- [MODIFICABLE] Pon False si quieres probar el código sin estar conectado a la RIS
 
 # --- 2. Parámetros Físicos y de Frecuencia (FR2) ---
@@ -45,8 +43,9 @@ FREQ_HZ = 28e9                  # <--- [MODIFICABLE] Frecuencia de operación en
 WAVELENGTH = 3e8 / FREQ_HZ      # Longitud de onda calculada automáticamente (~10.71 mm)
 
 # --- 3. Características de la Placa RIS ---
-RIS_NX = 16                     # <--- [MODIFICABLE] Número de elementos de la RIS en el eje X (columnas)
-RIS_NY = 16                     # <--- [MODIFICABLE] Número de elementos de la RIS en el eje Y (filas)
+RIS_NX = 40                     # <--- [MODIFICABLE] Número de elementos de la RIS en el eje X (columnas)
+RIS_NY = 40                     # <--- [MODIFICABLE] Número de elementos de la RIS en el eje Y (filas)
+N_ELEMENTS = RIS_NX * RIS_NY
 RIS_DX = WAVELENGTH / 2         # <--- [MODIFICABLE] Espaciado entre celdas en X (en metros)
 RIS_DY = WAVELENGTH / 2         # <--- [MODIFICABLE] Espaciado entre celdas en Y (en metros)
 RIS_BITS = 1                    # <--- [MODIFICABLE] Bits de fase de la RIS (1 bit = 2 estados, 2 bits = 4 estados)
@@ -67,7 +66,7 @@ USUARIOS_RX_POS = {
 PESOS_USUARIOS = np.array([1.0, 1.0, 1.0])  # <--- [MODIFICABLE] Prioridad de cada usuario en la prueba Multiusuario
 TX_POWER_W = 1.0                            # <--- [MODIFICABLE] Potencia de transmisión de referencia (W)
 NOISE_POWER_W = 1e-10                       # <--- [MODIFICABLE] Potencia de ruido estimada (W)
-MAX_ITER_WMMSE = 150                        # <--- [MODIFICABLE] Número máximo de iteraciones del algoritmo
+MAX_ITER_WMMSE = 50                         # <--- [MODIFICABLE] Número máximo de iteraciones del algoritmo
 
 print(f"✓ Configuración lista: RIS de {RIS_NX}x{RIS_NY} ({RIS_BITS} bits) a {FREQ_HZ/1e9:.1f} GHz.")
 
@@ -76,19 +75,19 @@ print(f"✓ Configuración lista: RIS de {RIS_NX}x{RIS_NY} ({RIS_BITS} bits) a {
 # =============================================================================
 # CELDA 3: ESTIMACIÓN DEL CANAL CON LOS MÓDULOS DE surpRISe (TANG GENERAL)
 # =============================================================================
-# En esta celda se instancian los objetos RIS, Antenna y TangGeneralChannel
+# En esta celda se instancian los objetos RIS, Antenna y tang_general_channel
 # para obtener los vectores de canal TX->RIS (G) y RIS->RX (H_r) en campo cercano.
 
 def estimar_canales_tang_general(tx_pos, usuarios_dict, ris_nx, ris_ny, dx, dy, freq):
     """
     Construye los objetos físicos del repositorio surpRISe y extrae la respuesta
-    del canal elemento a elemento en campo cercano (TangGeneralChannel).
+    del canal elemento a elemento en campo cercano (tang_general_channel).
     """
     N_total = ris_nx * ris_ny
     k0 = 2 * np.pi / (3e8 / freq)
 
     # =========================================================================
-    # [NOTA]: Si tus clases RIS, Antenna o TangGeneralChannel usan nombres de
+    # [NOTA]: Si tus clases RIS, Antenna o tang_general_channel usan nombres de
     # argumentos distintos en su __init__, ajústalos en las 3 líneas siguientes:
     # =========================================================================
     try:
@@ -115,8 +114,8 @@ def estimar_canales_tang_general(tx_pos, usuarios_dict, ris_nx, ris_ny, dx, dy, 
     for nombre_u, rx_pos in usuarios_dict.items():
         if usa_objetos_nativos:
             rx_obj = Antenna(position=rx_pos)                             # <--- [MODIFICABLE según tu antenna.py]
-            ch_obj = TangGeneralChannel(tx=tx_obj, ris=ris_obj, rx=rx_obj, freq=freq) # <--- [MODIFICABLE]
-            # Si tu clase TangGeneralChannel expone directamente los vectores TX->RIS y RIS->RX:
+            ch_obj = tang_general_channel(tx=tx_obj, ris=ris_obj, rx=rx_obj, freq=freq) # <--- [MODIFICABLE]
+            # Si tu clase tang_general_channel expone directamente los vectores TX->RIS y RIS->RX:
             if hasattr(ch_obj, "h_ris2rx") and hasattr(ch_obj, "h_tx2ris"):
                 G = np.asarray(ch_obj.h_tx2ris).reshape(-1, 1)
                 h_rk = np.asarray(ch_obj.h_ris2rx).reshape(-1)
@@ -238,49 +237,46 @@ print("✓ Funciones de optimización WMMSE-MM / SCRPA cargadas.")
 
 # %%
 # =============================================================================
-# CELDA 5: CONEXIÓN Y ENVÍO AL SERVIDOR DE LA RIS (ris_hardware_server.py)
+# CELDA 5: CONEXIÓN Y ENVÍO AL SERVIDOR DE LA RIS (VÍA UDP - PUERTO 17000)
 # =============================================================================
+# Formato especificado en el README de ris-fr2-sandbox:
+# - Comando JSON por UDP: {"cmd": "SET_CONFIG", "data": gw_pattern}
+# - gw_pattern (3200 enteros 0/1) intercala polarización V (pares) y H (impares)
+#   recorriendo cada matriz 40x40 invertida verticalmente y transpuesta: [::-1, :].T.flatten()
 
-def enviar_configuracion_a_ris(matriz_estados, nombre_prueba="test"):
+ris_controller = RISServerController(ip=SERVER_IP, port=SERVER_PORT)
+
+
+def enviar_configuracion_a_ris(matriz_estados_40x40, nombre_prueba="test", matriz_estados_h_40x40=None):
     """
-    Envía la matriz 2D de estados digitales a ris_hardware_server.py y guarda
-    una copia local en CSV por seguridad.
+    Construye la configuración RISConfig (polarización V y H), guarda copia local
+    en CSV y envía el comando JSON {"cmd": "SET_CONFIG", "data": gw_pattern}
+    por UDP a ris_hardware_server.py.
     """
-    # 1. Guardamos copia local por si deseas inspeccionarla
+    config = RISConfig(
+        state_matrix_v=matriz_estados_40x40,
+        state_matrix_h=matriz_estados_h_40x40,
+    )
+    gw_pattern = ris_controller.build_gw_pattern(config)
+
+    # Guardamos copia local en CSV por seguridad
     nombre_csv = f"config_ris_{nombre_prueba}.csv"
-    np.savetxt(nombre_csv, matriz_estados, fmt="%d", delimiter=",")
-    print(f"   [Archivo local guardado]: {nombre_csv}")
+    np.savetxt(nombre_csv, config.state_matrix_v, fmt="%d", delimiter=",")
+    print(f"   [Archivo local guardado]: {nombre_csv} (Estados gw_pattern: {len(gw_pattern)})")
 
     if not ENVIAR_AL_SERVIDOR:
-        print("   [Modo Simulación]: Envío al servidor desactivado (ENVIAR_AL_SERVIDOR = False).")
-        return
-
-    # 2. Formato JSON que se envía al servidor (ajústalo si tu servidor espera otra clave)
-    payload = {
-        "pattern": matriz_estados.tolist(),   # <--- [MODIFICABLE] Clave JSON que espera ris_hardware_server.py
-        "name": nombre_prueba
-    }
-    datos_bytes = json.dumps(payload).encode("utf-8")
+        print("   [Modo Simulación]: Envío desactivado (ENVIAR_AL_SERVIDOR = False).")
+        return gw_pattern
 
     try:
-        if SERVER_PROTOCOL.lower() == "http":
-            url = f"http://{SERVER_IP}:{SERVER_PORT}{SERVER_ENDPOINT}"
-            req = urllib.request.Request(
-                url, data=datos_bytes, headers={"Content-Type": "application/json"}, method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                print(f"   ✓ [RIS SERVER HTTP] Configurado con éxito. Respuesta: {response.read().decode()}")
-        else:
-            # Envío directo por Socket TCP
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
-                s.connect((SERVER_IP, SERVER_PORT))
-                s.sendall(datos_bytes)
-                respuesta = s.recv(1024).decode("utf-8", errors="ignore")
-                print(f"   ✓ [RIS SERVER TCP] Configurado con éxito. Respuesta: {respuesta}")
+        ris_controller.addr = (SERVER_IP, SERVER_PORT)
+        ris_controller.apply_config(config)
+        print(f"   ✓ [UDP SET_CONFIG ENVIADO] {len(gw_pattern)} estados enviados a {SERVER_IP}:{SERVER_PORT}")
     except Exception as e:
-        print(f"   ⚠ [AVISO CONEXIÓN]: No se pudo contactar con {SERVER_IP}:{SERVER_PORT} ({e}).")
-        print(f"     Puedes cargar manualmente el archivo '{nombre_csv}' en el servidor.")
+        print(f"   ⚠ [AVISO UDP]: No se pudo enviar el paquete a {SERVER_IP}:{SERVER_PORT} ({e}).")
+        print(f"     Puedes cargar manualmente '{nombre_csv}'.")
+
+    return gw_pattern
 
 
 # %%

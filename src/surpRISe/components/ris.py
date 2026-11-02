@@ -1,4 +1,5 @@
 import copy
+from surpRISe.components.ris_controller import RISConfig, RISServerController  # noqa: F401
 
 import matplotlib.pyplot as plt
 import numpy as np
