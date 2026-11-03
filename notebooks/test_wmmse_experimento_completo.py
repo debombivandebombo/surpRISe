@@ -17,7 +17,6 @@ import socket
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-import matplotlib.pyplot as plt
 
 # Aseguramos que Python encuentre la carpeta 'src' de surpRISe si ejecutamos desde 'notebooks/'
 _SURPRISE_SRC = os.path.abspath(
@@ -467,38 +466,4 @@ res_multiusuario = optimizar_ris_wmmse_mm(
 enviar_config_ris_udp(res_multiusuario, etiqueta="MU Todos (WMMSE-MM)")
 
 print("   >>> RIS configurada en modo MULTIUSUARIO. Ya puedes medir con el VNA en todos los puntos.")
-
-
-# %%
-# =============================================================================
-# CELDA 8: VISUALIZACIÓN DE LOS PATRONES DE FASE Y CONVERGENCIA WMMSE-MM
-# =============================================================================
-num_plots = len(nombres_usuarios) + 1
-fig, axes = plt.subplots(1, num_plots, figsize=(4 * num_plots, 4))
-
-# 1. Mapas de fase de cada usuario único
-for idx, nombre_usuario in enumerate(nombres_usuarios):
-    mapa_grados = resultados_individuales[nombre_usuario]["fases_deg"].reshape((RIS_NY, RIS_NX))
-    im = axes[idx].imshow(mapa_grados, cmap="twilight", vmin=0, vmax=360)
-    axes[idx].set_title(f"SU: {nombre_usuario}")
-    axes[idx].set_xlabel("Columna X")
-    axes[idx].set_ylabel("Fila Y")
-
-# 2. Mapa de fase del modo Multiusuario
-mapa_mu_grados = res_multiusuario["fases_deg"].reshape((RIS_NY, RIS_NX))
-im = axes[-1].imshow(mapa_mu_grados, cmap="twilight", vmin=0, vmax=360)
-axes[-1].set_title("MU: Todos (WMMSE-MM)")
-axes[-1].set_xlabel("Columna X")
-
-fig.colorbar(im, ax=axes.ravel().tolist(), label="Fase (Grados)", shrink=0.8)
-plt.suptitle(f"Configuraciones de la RIS en Campo Cercano ({RIS_BITS} bit)", fontsize=13)
-plt.show()
-
-# 3. Curva de convergencia del algoritmo WMMSE-MM Multiusuario
-plt.figure(figsize=(6, 4))
-plt.plot(res_multiusuario["historico_wsr"], marker="o", markersize=3)
-plt.title("Convergencia del Algoritmo WMMSE-MM (Multiusuario)")
-plt.xlabel("Iteracion")
-plt.ylabel("Weighted Sum-Rate Teorico (bps/Hz)")
-plt.grid(True, linestyle="--", alpha=0.6)
-plt.show()
+print("\n[FIN] Todas las configuraciones han sido calculadas y enviadas directamente a la RIS.")

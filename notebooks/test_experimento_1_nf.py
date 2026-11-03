@@ -48,8 +48,6 @@ USERS_POS = {
 USER_WEIGHTS = np.array([1.0, 1.0, 1.0])
 
 # Carpeta donde se guardarán las matrices de estados para el hardware
-OUTPUT_DIR = "resultados_experimento_1"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 # =====================================================================
@@ -198,13 +196,6 @@ def evaluate_all_users(
     return rx_power_dbm, rates_bps_hz
 
 
-def save_ris_hardware_state(phases_deg: np.ndarray, nx: int, ny: int, n_bits: int, filename: str):
-    """Guarda la matriz de estados digitales (0, 1, ..., 2^B - 1) lista para la placa RIS."""
-    step = 360.0 / (2 ** n_bits)
-    states_2d = (np.round(phases_deg / step).astype(int) % (2 ** n_bits)).reshape((nx, ny))
-    filepath = os.path.join(OUTPUT_DIR, filename)
-    np.savetxt(filepath, states_2d, fmt="%d", delimiter=",")
-    return states_2d, filepath
 
 
 # =====================================================================
@@ -255,8 +246,6 @@ def main():
         phase_maps_deg[f"Individual: {name}"] = phases_2d
 
         # Guardamos el archivo de estados para cargarlo en el hardware en este paso
-        _, fpath = save_ris_hardware_state(
-            res_su["phases_deg"], NX, NY, RIS_BITS, f"ris_state_SU_{name}.csv"
         )
 
         # Medimos en el usuario objetivo y también en el resto de usuarios
@@ -264,7 +253,7 @@ def main():
         power_matrix_dbm[idx, :] = p_dbm
         rate_matrix[idx, :] = r_bps
 
-        print(f"\n[Configuración RIS enfocada a {name}] -> Archivo: {fpath}")
+        print(f"\n[Configuración RIS enfocada a {name}]")
         for m_idx, m_name in enumerate(user_names):
             tag = " (OBJETIVO)" if m_idx == idx else ""
             print(f"   Medición en {m_name:10s}: Potencia = {p_dbm[m_idx]:6.2f} dBm | Tasa = {r_bps[m_idx]:5.2f} bps/Hz{tag}")
@@ -296,15 +285,13 @@ def main():
     phases_mu_2d = res_mu["phases_deg"].reshape((NX, NY))
     phase_maps_deg["General: Todos (WMMSE-MM)"] = phases_mu_2d
 
-    _, fpath_mu = save_ris_hardware_state(
-        res_mu["phases_deg"], NX, NY, RIS_BITS, "ris_state_MU_Todos.csv"
     )
 
     p_dbm_mu, r_bps_mu = evaluate_all_users(G, H_r_all, theta_mu, TX_POWER_W, NOISE_POWER_W)
     power_matrix_dbm[K, :] = p_dbm_mu
     rate_matrix[K, :] = r_bps_mu
 
-    print(f"\n[Configuración RIS Multiusuario (WMMSE-MM)] -> Archivo: {fpath_mu}")
+    print(f"\n[Configuración RIS Multiusuario (WMMSE-MM)]")
     for m_idx, m_name in enumerate(user_names):
         print(f"   Medición en {m_name:10s}: Potencia = {p_dbm_mu[m_idx]:6.2f} dBm | Tasa = {r_bps_mu[m_idx]:5.2f} bps/Hz")
     print(f"   -> Tasa Suma Total (Sum-Rate): {np.sum(r_bps_mu):.2f} bps/Hz")
@@ -320,7 +307,6 @@ def main():
         ax.set_ylabel("Elemento Y")
     fig.colorbar(im, ax=axes.ravel().tolist(), label="Fase cuantizada (Grados)", shrink=0.8)
     plt.suptitle(f"Mapas de Fase de la RIS en Campo Cercano ({RIS_BITS} bits)", fontsize=13)
-    plt.savefig(os.path.join(OUTPUT_DIR, "mapas_fase_experimento_1.png"), dpi=150, bbox_inches="tight")
 
     # Gráfica comparativa de potencias recibidas
     fig2, ax2 = plt.subplots(figsize=(9, 5))
@@ -337,7 +323,6 @@ def main():
     ax2.set_title("Comparativa: Medición Individual vs. Medición General Multiusuario")
     ax2.grid(True, linestyle="--", alpha=0.5)
     ax2.legend()
-    plt.savefig(os.path.join(OUTPUT_DIR, "comparativa_potencias_exp1.png"), dpi=150, bbox_inches="tight")
     plt.show()
 
 
